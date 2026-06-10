@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "Collaborator": {
+      "title": "Collaborator",
+      "description": "Team member registered on the app",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeCompleto": { "type": "string" },
+        "email": { "type": "string" },
+        "cargo": { "type": "string" },
+        "status": { "type": "string" },
+        "tipoChavePix": { "type": "string" },
+        "chavePix": { "type": "string" },
+        "atividadesPermitidas": { "type": "array" },
+        "password": { "type": "string" }
+      },
+      "required": ["id", "nomeCompleto", "email"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Lançamento de venda realizada",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cliente": { "type": "string" },
+        "data": { "type": "string" },
+        "vendedorId": { "type": "string" },
+        "vendedorNome": { "type": "string" },
+        "atividades": { "type": "array" },
+        "pacotes": { "type": "array" },
+        "valorTotal": { "type": "number" },
+        "modoLançamento": { "type": "string" },
+        "status": { "type": "string" },
+        "pagoParceiro": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "cliente", "data", "vendedorId"]
+    }
+  },
+  "firestore": {
+    "/collaborators/{id}": {
+      "schema": "Collaborator",
+      "description": "Collection of team members"
+    },
+    "/sales/{id}": {
+      "schema": "Sale",
+      "description": "Collection of sales logs"
+    }
+  }
+}

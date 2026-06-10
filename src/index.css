@@ -1,0 +1,280 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-zoom-in {
+  animation: zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Disable native input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: unset !important;
+    max-height: unset !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   GLOBAL CONTRAST & LEGIBILITY ADJUSTMENTS FOR ALL ANGLE CLEAR PAGES
+   ========================================================================== */
+
+/* Target light views under the main section */
+main {
+  /* Increase readability of any low contrast text on white/light gray background */
+}
+
+/* Improve contrast of Slate, Gray, and Neutral grays to be significantly darker */
+main .text-slate-500,
+main .text-gray-500,
+main .text-neutral-500,
+main .text-zinc-500 {
+  color: #1e293b !important; /* Rich slate-800 for high-contrast descriptions and subheadings */
+}
+
+main .text-slate-400,
+main .text-gray-400,
+main .text-neutral-400,
+main .text-zinc-400 {
+  color: #334155 !important; /* Slate-700 for labels, legends, and secondary elements */
+}
+
+main .text-slate-350,
+main .text-slate-300,
+main .text-gray-300,
+main .text-neutral-300,
+main .text-zinc-300 {
+  color: #475569 !important; /* Slate-600 for high readability helper texts and captions */
+}
+
+main .text-slate-200,
+main .text-gray-200,
+main .text-neutral-200,
+main .text-zinc-200 {
+  color: #475569 !important; /* Elevate extremely light gray to slate-600 for clear legibility */
+}
+
+main .text-slate-650,
+main .text-slate-600,
+main .text-gray-600,
+main .text-neutral-600,
+main .text-zinc-600 {
+  color: #0f172a !important; /* Slate-900 for high-importance body content and strong details */
+}
+
+main .text-slate-700,
+main .text-gray-700,
+main .text-neutral-700,
+main .text-zinc-700 {
+  color: #0d1527 !important; /* Full dark navy-slate for extra durability */
+}
+
+main .text-slate-800,
+main .text-gray-800,
+main .text-neutral-800,
+main .text-zinc-800 {
+  color: #0d1527 !important;
+}
+
+/* Safeguard blue, violet, and indigo accents from being washed out on light screens */
+main .text-indigo-400,
+main .text-indigo-300 {
+  color: #3730a3 !important; /* Indigo-800 for solid contrast */
+}
+
+main .text-blue-400,
+main .text-blue-300 {
+  color: #1e40af !important; /* Blue-800 */
+}
+
+main .text-emerald-400,
+main .text-emerald-300 {
+  color: #065f46 !important; /* Emerald-800 */
+}
+
+main .text-teal-400,
+main .text-teal-300 {
+  color: #115e59 !important; /* Teal-800 */
+}
+
+/* Increase contrast for low-opacity text utilities on white */
+main [class*="text-slate-900/40"],
+main [class*="text-slate-900/50"],
+main [class*="text-slate-900/60"],
+main [class*="text-[#0e2438]/50"],
+main [class*="text-[#0e2438]/60"] {
+  color: #1e293b !important;
+}
+
+/* Adjust layout tables, labels, form instructions, metadata and legend text for optimal scannability */
+main table thead th,
+main table th {
+  color: #0f172a !important; /* Slate-900 for table column headers */
+  font-weight: 700 !important;
+}
+
+main label,
+main span.text-xs.font-bold:not(.text-white),
+main p.text-xs.font-bold:not(.text-white),
+main div.text-xs.font-bold:not(.text-white) {
+  color: #1e293b !important; /* High contrast Slate-800 label tags */
+}
+
+/* ==========================================================================
+   SAFEGUARD RULES: RESTORE LIGHT/WHITE CONTRAST INSIDE DARK TEMPLATE COMPOSITIONS
+   ========================================================================== */
+
+/* Prevent these enhancements from touching dark containers and panels, e.g., headers or modals */
+main [class*="bg-slate-900"] .text-slate-500,
+main [class*="bg-slate-950"] .text-slate-500,
+main [class*="bg-slate-900"] .text-gray-500,
+main [class*="bg-[#0e2438]"] .text-slate-500,
+main [class*="bg-[#0e2438]"] .text-gray-500,
+main [class*="bg-[#1c3a5a]"] .text-slate-500,
+main [class*="bg-[#1c3a5a]"] .text-gray-500 {
+  color: var(--color-slate-500, #64748b) !important;
+}
+
+main [class*="bg-slate-900"] .text-slate-400,
+main [class*="bg-slate-950"] .text-slate-400,
+main [class*="bg-slate-900"] .text-gray-400,
+main [class*="bg-[#0e2438]"] .text-slate-400,
+main [class*="bg-[#0e2438]"] .text-gray-400,
+main [class*="bg-[#1c3a5a]"] .text-slate-400,
+main [class*="bg-[#1c3a5a]"] .text-gray-400 {
+  color: var(--color-slate-400, #94a3b8) !important;
+}
+
+main [class*="bg-slate-900"] .text-slate-400,
+main [class*="bg-slate-950"] .text-slate-400,
+main [class*="bg-slate-100/10"] .text-slate-400,
+main [class*="bg-slate-900"] .text-gray-400 {
+  color: var(--color-slate-400, #94a3b8) !important;
+}
+
+main [class*="bg-slate-900"] .text-slate-350,
+main [class*="bg-slate-900"] .text-slate-300,
+main [class*="bg-slate-950"] .text-slate-300,
+main [class*="bg-slate-900"] .text-gray-300,
+main [class*="bg-[#0e2438]"] .text-slate-300,
+main [class*="bg-[#0e2438]"] .text-gray-300,
+main [class*="bg-[#1c3a5a]"] .text-slate-300,
+main [class*="bg-[#1c3a5a]"] .text-gray-300 {
+  color: var(--color-slate-300, #cbd5e1) !important;
+}
+
+main [class*="bg-slate-900"] .text-slate-200,
+main [class*="bg-slate-950"] .text-slate-200,
+main [class*="bg-slate-900"] .text-gray-200,
+main [class*="bg-[#0e2438]"] .text-slate-200,
+main [class*="bg-[#0e2438]"] .text-gray-200,
+main [class*="bg-[#1c3a5a]"] .text-slate-200,
+main [class*="bg-[#1c3a5a]"] .text-gray-200 {
+  color: var(--color-slate-200, #e2e8f0) !important;
+}
+
+/* Ensure absolute whites, tooltips on active states remain pristine */
+.text-white,
+main .text-white,
+main button.text-white,
+main button.text-white.text-xs,
+main button.text-white.font-bold,
+main button.text-white.text-xs.font-bold,
+main .text-white.text-xs,
+main .text-white.font-bold,
+main .text-white.text-xs.font-bold,
+main button[class*="bg-"] {
+  color: #ffffff !important;
+}
+
+main [class*="text-emerald-400"],
+main [class*="text-emerald-500"] {
+  /* Keep strong colors unaffected */
+}
+
+
+/* ==========================================================================
+   GLOBAL SUBHEADING & DESCRIPTION CONTRAST AND SIZE UPGRADES
+   ========================================================================== */
+
+/* Upgrades standard slate-500 descriptions (e.g. 11px or text-xs) on clear backgrounds */
+main p.text-slate-500,
+main p.text-slate-400,
+main span.text-slate-500,
+main span.text-slate-400,
+main .text-slate-500.font-sans,
+main .text-slate-400.font-sans,
+main .text-\[11px\].text-slate-500,
+main .text-\[11px\].text-slate-400,
+main .text-xs.text-slate-500,
+main .text-xs.text-slate-400 {
+  font-size: 13.5px !important;          /* Slightly larger as requested (13.5px instead of 11px/12px) */
+  color: #0f172a !important;             /* Extremely dark slate-900 for high optical contrast */
+  font-weight: 550 !important;           /* Medium-semibold weight for solid reading durability and thickness */
+  line-height: 1.5 !important;           /* Elegant, comfortable line spacing */
+}
+
+/* Ensure no opacity filters from Tailwind interfere with legibility */
+main .text-slate-550,
+main .text-slate-500\/70,
+main .text-slate-500\/80,
+main .text-slate-400\/70,
+main .text-slate-400\/80 {
+  color: #0f172a !important;
+  opacity: 1 !important;
+}
+
+/* Specific safeguard to reset text properties in dark modal panels and containers */
+main [class*="bg-slate-900"] p.text-slate-500,
+main [class*="bg-slate-900"] p.text-slate-400,
+main [class*="bg-slate-900"] span.text-slate-500,
+main [class*="bg-[#0e2438]"] p.text-slate-500,
+main [class*="bg-[#0e2438]"] p.text-slate-400,
+main [class*="bg-[#0e2438]"] span.text-slate-400,
+main [class*="bg-slate-950"] p.text-slate-500,
+main [class*="bg-slate-950"] p.text-slate-400,
+main [class*="bg-[#1c3a5a]"] p.text-slate-500,
+main [class*="bg-[#1c3a5a]"] p.text-slate-400 {
+  font-size: inherit !important;
+  color: var(--color-slate-400, #94a3b8) !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+}
+

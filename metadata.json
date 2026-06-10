@@ -1,0 +1,6 @@
+{
+  "name": "ALL ANGLE VENDAS ONLINE",
+  "description": "Sistema completo de lançamentos e controle de comissões da ALL ANGLE",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
