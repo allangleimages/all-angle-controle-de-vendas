@@ -545,7 +545,7 @@ export const GestaoEquipeView: React.FC = () => {
                           <button
                             type="button"
                             onClick={handleTriggerFile}
-                            className="bg-white/5 hover:bg-white/10 text-white font-sans text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl border border-white/10 transition cursor-pointer font-bold"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-sans text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl border border-indigo-400 transition cursor-pointer font-black"
                           >
                             Carregar Foto
                           </button>
@@ -553,7 +553,7 @@ export const GestaoEquipeView: React.FC = () => {
                             <button
                               type="button"
                               onClick={handleRemovePhoto}
-                              className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-455 text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl border border-rose-500/20 transition cursor-pointer font-bold"
+                              className="bg-rose-700 hover:bg-rose-800 text-white text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl border border-rose-600 transition cursor-pointer font-black"
                             >
                               Remover Foto
                             </button>
@@ -873,7 +873,7 @@ export const GestaoEquipeView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleRemoveMatrixRow(index)}
-                              className="bg-rose-550/10 hover:bg-rose-550/20 text-rose-450 border border-white/5 p-3 rounded-xl transition shrink-0 cursor-pointer self-stretch sm:self-end text-center flex items-center justify-center font-bold"
+                              className="bg-rose-700 hover:bg-rose-800 text-white border border-rose-600 p-3 rounded-xl transition shrink-0 cursor-pointer self-stretch sm:self-end text-center flex items-center justify-center font-black"
                               title="Remover Regra"
                             >
                               <Trash2 className="w-5 h-5" />

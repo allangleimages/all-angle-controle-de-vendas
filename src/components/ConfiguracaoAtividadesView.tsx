@@ -624,7 +624,7 @@ export const ConfiguracaoAtividadesView: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveCustomCommissionLine(act.id, line.alvoId)}
-                                      className="text-rose-400 hover:bg-rose-950 hover:text-rose-200 p-2 rounded-xl transition cursor-pointer border border-transparent hover:border-rose-900"
+                                      className="text-white bg-rose-700 hover:bg-rose-800 p-2 rounded-xl transition cursor-pointer border border-rose-600 shadow-sm"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>

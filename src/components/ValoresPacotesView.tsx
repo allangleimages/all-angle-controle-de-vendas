@@ -1145,7 +1145,7 @@ export const ValoresPacotesView: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveTierRow(index)}
-                                      className="text-rose-400 hover:bg-rose-500/10 p-2 rounded border border-white/15 cursor-pointer"
+                                      className="text-white bg-rose-700 hover:bg-rose-800 p-2 rounded border border-rose-600 cursor-pointer transition flex items-center justify-center font-bold"
                                     >
                                       <X className="w-4 h-4" />
                                     </button>

@@ -572,7 +572,7 @@ export const GestaoParceirosView: React.FC = () => {
                           <button
                             type="button"
                             onClick={handleTriggerFile}
-                            className="bg-white hover:bg-white/95 text-slate-950 font-sans text-[9px] uppercase tracking-wider px-3.5 py-2 rounded-xl transition cursor-pointer font-bold border border-white/10"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-sans text-[9px] uppercase tracking-wider px-3.5 py-2 rounded-xl border border-indigo-400 transition cursor-pointer font-black"
                           >
                             Carregar Imagem
                           </button>
@@ -580,7 +580,7 @@ export const GestaoParceirosView: React.FC = () => {
                             <button
                               type="button"
                               onClick={handleRemovePhoto}
-                              className="bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 font-sans text-[9px] uppercase tracking-wider px-3.5 py-2 rounded-xl border border-rose-500/20 transition cursor-pointer font-bold"
+                              className="bg-rose-700 hover:bg-rose-800 text-white font-sans text-[9px] uppercase tracking-wider px-3.5 py-2 rounded-xl border border-rose-600 transition cursor-pointer font-black"
                             >
                               Remover Foto
                             </button>
@@ -852,7 +852,7 @@ export const GestaoParceirosView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleRemoveMatrixRow(index)}
-                              className="bg-rose-500/15 hover:bg-rose-500/25 text-rose-450 border border-transparent hover:border-white/5 p-3 rounded-xl transition shrink-0 cursor-pointer self-stretch sm:self-end text-center flex items-center justify-center font-bold"
+                              className="bg-rose-700 hover:bg-rose-800 text-white border border-rose-600 p-3 rounded-xl transition shrink-0 cursor-pointer self-stretch sm:self-end text-center flex items-center justify-center font-black"
                               title="Remover Acordo"
                             >
                               <Trash2 className="w-5 h-5" />

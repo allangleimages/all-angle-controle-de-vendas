@@ -2430,7 +2430,7 @@ export const HomeView: React.FC = () => {
                                 onClick={() => {
                                   setPaymentRows(prev => prev.filter((_, i) => i !== index));
                                 }}
-                                className="text-rose-450 hover:text-rose-400 p-2 bg-rose-500/10 hover:bg-rose-500/20 rounded-xl transition cursor-pointer shrink-0"
+                                className="text-white hover:text-white p-2 bg-rose-700 hover:bg-rose-800 border border-rose-600 rounded-xl transition cursor-pointer shrink-0"
                                 title="Remover esta forma de pagamento"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
