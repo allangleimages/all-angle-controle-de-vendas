@@ -79,7 +79,7 @@ export const HomeView: React.FC = () => {
     whatsapp: '',
     email: '',
     hospedagem: '',
-    pessoas: '1',
+    pessoas: '',
     vendedorId: '',
     parceiroId: '',
     atividadeId: '',
@@ -106,7 +106,7 @@ export const HomeView: React.FC = () => {
 
   // Payment methods rows state
   const [paymentRows, setPaymentRows] = useState<Array<{ forma: string; valor: string }>>([
-    { forma: 'PIX', valor: '' }
+    { forma: '', valor: '' }
   ]);
 
   // Settle individual sale expansions state
@@ -128,7 +128,7 @@ export const HomeView: React.FC = () => {
         whatsapp: '',
         email: '',
         hospedagem: '',
-        pessoas: '1',
+        pessoas: '',
         vendedorId: isAdmin ? '' : currentUser.id,
         parceiroId: '',
         atividadeId: '',
@@ -143,7 +143,7 @@ export const HomeView: React.FC = () => {
       setSelectedPackageId('');
       setSpecialPhotoQty('');
       setPaymentRows([
-        { forma: 'PIX', valor: '' }
+        { forma: '', valor: '' }
       ]);
       setIsConfirmingLaunchDelete(false);
       setValidationError(null);
@@ -221,7 +221,7 @@ export const HomeView: React.FC = () => {
       })));
     } else {
       setPaymentRows([
-        { forma: sale.formaPagamento || 'PIX', valor: String(sale.valorTotal || '') }
+        { forma: sale.formaPagamento || '', valor: String(sale.valorTotal || '') }
       ]);
     }
     
