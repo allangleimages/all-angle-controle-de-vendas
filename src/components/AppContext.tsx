@@ -33,6 +33,7 @@ const setDoc = (docRef: any, data: any, options?: any) => {
 interface AppContextType {
   currentUser: Collaborator;
   currentUserEmail: string;
+  originalAdminEmail: string;
   isAuthenticated: boolean;
   sales: Sale[];
   collaborators: Collaborator[];
@@ -88,6 +89,15 @@ export const useApp = () => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => StoreManager.getCurrentUserEmail());
+  const [originalAdminEmail, setOriginalAdminEmail] = useState<string>(() => {
+    const current = StoreManager.getCurrentUserEmail();
+    const saved = localStorage.getItem('all_angle_original_admin_email') || '';
+    if (current.toLowerCase() === 'info@allangle.com.br') {
+      localStorage.setItem('all_angle_original_admin_email', 'info@allangle.com.br');
+      return 'info@allangle.com.br';
+    }
+    return saved;
+  });
   const [sales, setSales] = useState<Sale[]>(() => StoreManager.getSales());
   const [collaborators, setCollaborators] = useState<Collaborator[]>(() => StoreManager.getCollaborators());
   const [partners, setPartners] = useState<Partner[]>(() => StoreManager.getPartners());
@@ -403,6 +413,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCurrentUserByEmail = (email: string) => {
     setCurrentUserEmail(email);
     StoreManager.setCurrentUserEmail(email);
+    if (email.toLowerCase() === 'info@allangle.com.br') {
+      setOriginalAdminEmail('info@allangle.com.br');
+      localStorage.setItem('all_angle_original_admin_email', 'info@allangle.com.br');
+    } else if (!email) {
+      setOriginalAdminEmail('');
+      localStorage.removeItem('all_angle_original_admin_email');
+    }
   };
 
   // Sync to Storage helpers
@@ -980,6 +997,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       currentUser,
       currentUserEmail,
+      originalAdminEmail,
       isAuthenticated,
       sales,
       collaborators,

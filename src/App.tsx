@@ -19,7 +19,7 @@ import { StoreManager } from './store';
 type AllowedPages = 'home' | 'relatorios' | 'equipe' | 'parceiros' | 'atividades' | 'pacotes';
 
 const NavigationMaster: React.FC = () => {
-  const { currentUser, collaborators, setCurrentUserByEmail, updateCollaborator, isAuthenticated } = useApp();
+  const { currentUser, collaborators, setCurrentUserByEmail, updateCollaborator, isAuthenticated, originalAdminEmail } = useApp();
   const [activePage, setActivePage] = useState<AllowedPages>('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -72,7 +72,8 @@ const NavigationMaster: React.FC = () => {
   };
 
   // User Profile metadata variables
-  const isSeedAccount = currentUser.email.toLowerCase() === 'info@allangle.com.br';
+  const isSeedAccount = currentUser.email.toLowerCase() === 'info@allangle.com.br' || originalAdminEmail.toLowerCase() === 'info@allangle.com.br';
+  const isOriginalAdmin = originalAdminEmail.toLowerCase() === 'info@allangle.com.br' || currentUser.email.toLowerCase() === 'info@allangle.com.br';
   const displayedName = isSeedAccount ? 'All Angle' : currentUser.nomeCompleto;
   const displayedRole = currentUser.cargo === 'Admin' ? 'Administrador' : 'Colaborador';
 
@@ -445,7 +446,7 @@ const NavigationMaster: React.FC = () => {
               title="Opções de Conta"
             >
               {/* Safe filter: Only display collaborators for Admin simulation switcher */}
-              {isAdmin ? (
+              {isOriginalAdmin ? (
                 collaborators.map(c => {
                   const cName = c.email.toLowerCase() === 'info@allangle.com.br' ? 'All Angle (Admin)' : c.nomeCompleto;
                   return (

@@ -47,6 +47,7 @@ export const HomeView: React.FC = () => {
   // Launch Sales Modals state
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [overrideLaunchDate, setOverrideLaunchDate] = useState<string | null>(null);
 
   // Selected sale details popup modal state ("CLICK-TO-VIEW")
   const [selectedSaleDetailId, setSelectedSaleDetailId] = useState<string | null>(null);
@@ -122,7 +123,7 @@ export const HomeView: React.FC = () => {
     if (isLaunchModalOpen && !editingSale) {
       const todayStr = new Date().toISOString().split('T')[0];
       setFormData({
-        data: todayStr,
+        data: overrideLaunchDate || todayStr,
         nomeCliente: '',
         whatsapp: '',
         email: '',
@@ -148,6 +149,13 @@ export const HomeView: React.FC = () => {
       setValidationError(null);
     }
   }, [isLaunchModalOpen, editingSale, activities, currentUser, isAdmin]);
+
+  // Reset overrideLaunchDate when modal closes
+  useEffect(() => {
+    if (!isLaunchModalOpen) {
+      setOverrideLaunchDate(null);
+    }
+  }, [isLaunchModalOpen]);
 
   // Reset details modal deletion state when details modal closes
   useEffect(() => {
@@ -616,18 +624,14 @@ export const HomeView: React.FC = () => {
       return { subtotal: 0, precoUnitarioUsed: 0 };
     }
 
-    let totalCost = 0;
-    for (let i = 1; i <= qty; i++) {
-      const photoNumber = startIdx + i;
-      const tier = pkg.tiers.find(t => photoNumber >= t.minFotos && photoNumber <= t.maxFotos)
-        || pkg.tiers[pkg.tiers.length - 1]; // fallback to last tier
-      const up = tier ? tier.precoUnitario : 0;
-      totalCost += up;
-    }
+    const totalQty = qty + startIdx;
+    const tier = pkg.tiers.find(t => totalQty >= t.minFotos && totalQty <= t.maxFotos)
+      || pkg.tiers[pkg.tiers.length - 1]; // fallback to last tier
+    const precoUnitario = tier ? tier.precoUnitario : 0;
 
     return {
-      subtotal: totalCost,
-      precoUnitarioUsed: qty > 0 ? totalCost / qty : 0
+      subtotal: qty * precoUnitario,
+      precoUnitarioUsed: precoUnitario
     };
   };
 
@@ -1394,7 +1398,25 @@ export const HomeView: React.FC = () => {
                       ) : (
                         <div className="text-xs font-black text-slate-800 bg-slate-100/90 border-l-4 border-l-indigo-500 px-4 py-3 rounded-r-xl flex items-center justify-between select-none font-sans">
                           <span className="tracking-wide block font-extrabold uppercase text-slate-800">{block.label}</span>
-                          <span className="text-[10px] bg-indigo-50 text-indigo-800 px-2.5 py-1 rounded-full font-black font-sans block">{block.sales.length} lançamentos</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-indigo-50 text-indigo-800 px-2.5 py-1 rounded-full font-black font-sans block">{block.sales.length} lançamentos</span>
+                            {canPerformLaunches && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const blockDate = block.key.replace('day-', '');
+                                  setOverrideLaunchDate(blockDate);
+                                  setEditingSale(null);
+                                  setIsLaunchModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 bg-indigo-600 hover:bg-slate-950 hover:text-white text-white py-1.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-xs hover:scale-[1.03] active:scale-95 transition-all cursor-pointer border border-indigo-700 font-sans"
+                                title="Inserir lançamento direto nesta data"
+                              >
+                                <Plus className="w-3 h-3 text-white font-extrabold" />
+                                <span className="font-extrabold text-white">+ Venda</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
 
