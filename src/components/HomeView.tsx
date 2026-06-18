@@ -656,6 +656,12 @@ export const HomeView: React.FC = () => {
   const currentItemCalculatedSubtotal = useMemo(() => {
     if (!currentSelectedPackage) return 0;
     
+    // If the package is already in the cart, we can directly return its subtotal from the cart items
+    const existingItem = cartItems.find(item => item.pacoteId === selectedPackageId);
+    if (existingItem) {
+      return existingItem.subtotal;
+    }
+
     const isVendaDireta = currentSelectedPackage.vendaDireta !== false;
     
     if (isVendaDireta) {
@@ -715,7 +721,7 @@ export const HomeView: React.FC = () => {
         return subtotal;
       }
     }
-  }, [currentSelectedPackage, formPeopleCount, specialPhotoQty, formData.fotosVendidas, accumulatedPhotosInCart]);
+  }, [currentSelectedPackage, formPeopleCount, specialPhotoQty, formData.fotosVendidas, accumulatedPhotosInCart, cartItems, selectedPackageId]);
 
   // Synchronize cart items with changes to fotosVendidas and pessoas
   useEffect(() => {
