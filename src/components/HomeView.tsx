@@ -1000,7 +1000,7 @@ export const HomeView: React.FC = () => {
       setValidationError('Por favor, informe o nome do cliente!');
       return;
     }
-    if (paymentRows.some(row => !row.forma)) {
+    if (formData.status === 'Pago' && paymentRows.some(row => !row.forma)) {
       setValidationError('Por favor, selecione a Forma de Pagamento!');
       return;
     }
@@ -1018,10 +1018,12 @@ export const HomeView: React.FC = () => {
     }
 
     // Build pagamentos list for saving
-    const pgList = paymentRows.map(row => ({
-      forma: row.forma,
-      valor: parseFloat(row.valor) || 0
-    }));
+    const pgList = paymentRows
+      .filter(row => row.forma)
+      .map(row => ({
+        forma: row.forma,
+        valor: parseFloat(row.valor) || 0
+      }));
 
     // Backwards-compatible comma list for single-method lookups
     const uniqueMethods = Array.from(new Set(paymentRows.map(row => row.forma).filter(Boolean)));
@@ -2270,17 +2272,47 @@ export const HomeView: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          {/* FOTOS ENVIADAS (Venda Direta / Pacote Fechado) */}
-                          <div className="md:col-span-2">
-                            <label className="text-[10px] font-black uppercase text-white/50 tracking-wider block mb-1 text-left">FOTOS ENVIADAS</label>
-                            <input
-                              type="text"
-                              placeholder="Quantidade entregue"
-                              value={formData.fotosEnviadas}
-                              onChange={(e) => setFormData({ ...formData, fotosEnviadas: e.target.value.replace(/\D/g, '') })}
-                              className="w-full bg-white/5 border border-white/10 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 font-mono font-bold text-center text-white"
-                            />
-                          </div>
+                          {/* FOTOS ENVIADAS & ENTREGUES (Venda Direta / Pacote Fechado com preço fixo) */}
+                          {currentSelectedPackage && (currentSelectedPackage.tipoPreco === 'Standard' || currentSelectedPackage.tipoPreco === 'ProgressivoPessoa') ? (
+                            <>
+                              {/* FOTOS ENVIADAS */}
+                              <div>
+                                <label className="text-[10px] font-black uppercase text-white/50 tracking-wider block mb-1 text-left">FOTOS ENVIADAS</label>
+                                <input
+                                  type="text"
+                                  placeholder="Qtd enviada ao cliente"
+                                  value={formData.fotosEnviadas}
+                                  onChange={(e) => setFormData({ ...formData, fotosEnviadas: e.target.value.replace(/\D/g, '') })}
+                                  className="w-full bg-white/5 border border-white/10 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 font-mono font-bold text-center text-white"
+                                />
+                                <p className="text-[9px] text-white/30 text-left mt-1 uppercase font-bold">Apenas para estatística</p>
+                              </div>
+
+                              {/* FOTOS ENTREGUES */}
+                              <div>
+                                <label className="text-[10px] font-black uppercase text-white/50 tracking-wider block mb-1 text-left">FOTOS ENTREGUES</label>
+                                <input
+                                  type="text"
+                                  placeholder="Qtd de fotos entregue"
+                                  value={formData.fotosVendidas}
+                                  onChange={(e) => setFormData({ ...formData, fotosVendidas: e.target.value.replace(/\D/g, '') })}
+                                  className="w-full bg-[#1e293b] border border-emerald-500/45 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-emerald-500 font-mono font-bold text-center text-white"
+                                />
+                                <p className="text-[9px] text-emerald-400 text-left mt-1 uppercase font-bold">Apenas para estatística. Não altera preço fixo.</p>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="md:col-span-2">
+                              <label className="text-[10px] font-black uppercase text-white/50 tracking-wider block mb-1 text-left">FOTOS ENVIADAS</label>
+                              <input
+                                type="text"
+                                placeholder="Quantidade entregue"
+                                value={formData.fotosEnviadas}
+                                onChange={(e) => setFormData({ ...formData, fotosEnviadas: e.target.value.replace(/\D/g, '') })}
+                                className="w-full bg-white/5 border border-white/10 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 font-mono font-bold text-center text-white"
+                              />
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
