@@ -254,7 +254,7 @@ export const HomeView: React.FC = () => {
   const formatDate = (dateStr: string) => {
     const parts = dateStr.split('-');
     if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
     return dateStr;
   };
@@ -777,6 +777,7 @@ export const HomeView: React.FC = () => {
   }, [currentSelectedPackage, formPeopleCount, specialPhotoQty, formData.fotosVendidas, accumulatedPhotosInCart, cartItems, selectedPackageId]);
 
   // Synchronize cart items with changes to fotosVendidas and pessoas
+  // Synchronize cart items with changes to pessoas
   useEffect(() => {
     setCartItems(prevItems => {
       let isChanged = false;
@@ -799,7 +800,7 @@ export const HomeView: React.FC = () => {
             itemPhotos = item.quantidadeFotos || 0;
           }
         } else {
-          itemPhotos = parseInt(formData.fotosVendidas, 10) || 0;
+          itemPhotos = item.quantidadeFotos || 0;
         }
 
         if (isVendaDireta) {
@@ -831,7 +832,7 @@ export const HomeView: React.FC = () => {
             newPrecoUnitario = precoUnitarioUsed;
           }
         } else {
-          const qtySold = parseInt(formData.fotosVendidas, 10) || 0;
+          const qtySold = item.quantidadeFotos || 0;
           if (qtySold <= 0) {
             newSubtotal = 0;
             newPrecoUnitario = 0;
@@ -867,7 +868,7 @@ export const HomeView: React.FC = () => {
         // Add to running accumulated total for subsequent items
         runningAccumulatedPhotos += itemPhotos;
 
-        const targetQty = isVendaDireta ? item.quantidadeFotos : (parseInt(formData.fotosVendidas, 10) || undefined);
+        const targetQty = item.quantidadeFotos;
 
         if (item.subtotal !== newSubtotal || item.precoUnitario !== newPrecoUnitario || item.quantidadeFotos !== targetQty) {
           isChanged = true;
@@ -883,7 +884,7 @@ export const HomeView: React.FC = () => {
 
       return isChanged ? updated : prevItems;
     });
-  }, [formData.fotosVendidas, formData.pessoas, packages, formPeopleCount]);
+  }, [formData.pessoas, packages, formPeopleCount]);
 
   // Handle initializing or adjusting photo metrics based on the selected package's registered attributes
   useEffect(() => {
@@ -1416,7 +1417,7 @@ export const HomeView: React.FC = () => {
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4 border border-indigo-100">
                 <Layers className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Meus Lançamentos Realizados</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Lançamentos Realizados</p>
               <h3 className="text-3xl font-black text-slate-900 mt-2.5 font-mono tracking-tight">
                 {activeMonthSales.length} {activeMonthSales.length === 1 ? 'Lançamento' : 'Lançamentos'}
               </h3>
@@ -1430,7 +1431,7 @@ export const HomeView: React.FC = () => {
               <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl w-fit mb-4 border border-emerald-100">
                 <DollarSign className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Minha Receita Gerada (Caixa)</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Receita Gerada (Caixa)</p>
               <h3 className="text-3xl font-black text-slate-900 mt-2.5 font-mono tracking-tight">
                 {formatCurrency(grossRevenue)}
               </h3>
@@ -1444,7 +1445,7 @@ export const HomeView: React.FC = () => {
               <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl w-fit mb-4 border border-purple-100">
                 <CheckCircle className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Sua Comissão</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Comissão</p>
               <h3 className="text-3xl font-black text-purple-700 mt-2.5 font-mono tracking-tight">
                 {formatCurrency(personalCommission)}
               </h3>

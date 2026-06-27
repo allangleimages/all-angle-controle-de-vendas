@@ -55,9 +55,9 @@ const formatDate = (dateStr: string) => {
   const parts = cleanDate.split('-');
   if (parts.length === 3) {
     if (parts[0].length === 4) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
-    return `${parts[0]}/${parts[1]}/${parts[2]}`;
+    return `${parts[0]}-${parts[1]}-${parts[2]}`;
   }
   return dateStr;
 };
@@ -276,7 +276,7 @@ export const RelatoriosView: React.FC = () => {
       const paymentStr = getSalePaymentFormasString(sale).toUpperCase();
       const paymentTruncated = paymentStr.length > 22 ? paymentStr.substring(0, 20) + "..." : paymentStr;
 
-      doc.text(sale.data || '', marginX + 2, posY + 0.5);
+      doc.text(formatDate(sale.data), marginX + 2, posY + 0.5);
       doc.text(clientTruncated, marginX + 14, posY + 0.5);
       doc.text(String(sale.pessoas || 1), marginX + 38, posY + 0.5);
       doc.text(hotelTruncated, marginX + 46, posY + 0.5);
@@ -648,7 +648,7 @@ export const RelatoriosView: React.FC = () => {
       const totalVal = sale.valorTotal || 0;
       const paymentStr = getSalePaymentFormasString(sale).replace(/;/g, ',');
       
-      csvContent += `${sale.data};${clientClean};${sale.pessoas || 1};${hotelClean};${actName};${collabName};${packagesStr};${sale.fotosEnviadas || 0};${sale.fotosVendidas || 0};${initialVal.toFixed(2).replace('.', ',')};${discountVal.toFixed(2).replace('.', ',')};${totalVal.toFixed(2).replace('.', ',')};${paymentStr};${sale.status}\r\n`;
+      csvContent += `${formatDate(sale.data)};${clientClean};${sale.pessoas || 1};${hotelClean};${actName};${collabName};${packagesStr};${sale.fotosEnviadas || 0};${sale.fotosVendidas || 0};${initialVal.toFixed(2).replace('.', ',')};${discountVal.toFixed(2).replace('.', ',')};${totalVal.toFixed(2).replace('.', ',')};${paymentStr};${sale.status}\r\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1449,7 +1449,7 @@ export const RelatoriosView: React.FC = () => {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
     if (parts.length < 3) return dateStr;
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
   };
 
   const currentPeriodText = useCustomDateRange && startDate && endDate
