@@ -20,9 +20,12 @@ export interface Sale {
   fotosVendidas?: number;
   sacolaItens: SalesItem[];
   descontoManual: number;
+  valorBruto: number;
   valorTotal: number;
   formaPagamento: string;
-  pagamentos?: Array<{ forma: string; valor: number }>;
+  pagamentos?: Array<{ forma: string; valor: number; alboomPay?: boolean; alboomTax?: number; taxaId?: string }>;
+  alboomTax?: number;
+  taxaId?: string; // Selected customizable FeeRule ID
   status: 'Pago' | 'Pendente' | 'Abandonada' | 'Archived';
   dataPagamento?: string; // YYYY-MM-DD
   linkedOrderId?: string; // Links Venda B (upsell) to Venda A
@@ -119,3 +122,18 @@ export interface Package {
   mediaRef?: string;
   corTag?: string; // Custom visual color for the package
 }
+
+export interface FeeRule {
+  id: string;
+  nome: string;
+  tipoDesconto?: 'porcentagem' | 'fixo';
+  aplicarAllAngle: boolean;
+  porcentagemAllAngle: number;
+  aplicarEquipe: boolean;
+  porcentagemEquipe: number;
+  arquivado?: boolean;
+  observacao?: string;
+  exibirApenasConsolidado?: boolean;
+  valorConsolidadoRelatorio?: number;
+}
+

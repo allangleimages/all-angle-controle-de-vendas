@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from './AppContext';
 import { StoreManager } from '../store';
-import { calculateCollaboratorCommission, calculatePartnerCommission } from '../utils/finance';
+import { calculateCollaboratorCommission, calculatePartnerCommission, calculateSaleTaxes } from '../utils/finance';
 import { Sale, Collaborator, Partner, Activity, Package } from '../types';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,12 +11,13 @@ import {
   Tag, MessageSquare, Activity as ActivityIcon, Briefcase, 
   Layers, Plus, Trash2, Edit, Save, X, Search, CheckCircle, 
   RefreshCw, SlidersHorizontal, AlertCircle, AlertTriangle,
-  Database, Cloud, Download, Upload, ShieldAlert
+  Database, Cloud, Download, Upload, ShieldAlert,
+  Info, CreditCard
 } from 'lucide-react';
 
 export const HomeView: React.FC = () => {
   const { 
-    currentUser, sales, collaborators, partners, activities, packages, paidCommissions,
+    currentUser, sales, collaborators, partners, activities, packages, paidCommissions, feeRules,
     addSale, updateSale, deleteSale, addPartner, toggleRepassePaid,
     forcePushLocalToCloud, forcePullCloudToLocal, wipeAllSystemData
   } = useApp();
@@ -60,6 +61,7 @@ export const HomeView: React.FC = () => {
   const [isConfirmingLaunchDelete, setIsConfirmingLaunchDelete] = useState(false);
   const [quickConfirmDeleteId, setQuickConfirmDeleteId] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isAlboomModalOpen, setIsAlboomModalOpen] = useState(false);
 
   // Advanced Cloud Synchronization panel states
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -105,8 +107,8 @@ export const HomeView: React.FC = () => {
   const [specialPhotoQty, setSpecialPhotoQty] = useState('');
 
   // Payment methods rows state
-  const [paymentRows, setPaymentRows] = useState<Array<{ forma: string; valor: string }>>([
-    { forma: '', valor: '' }
+  const [paymentRows, setPaymentRows] = useState<Array<{ forma: string; valor: string; taxaId?: string }>>([
+    { forma: '', valor: '', taxaId: '' }
   ]);
 
   // Settle individual sale expansions state
@@ -117,6 +119,25 @@ export const HomeView: React.FC = () => {
   const selectedPeriodStr = useMemo(() => {
     return `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
   }, [selectedYear, selectedMonth]);
+
+  // Handle setting up custom event listeners for notifications click
+  useEffect(() => {
+    const handleOpenSale = (e: Event) => {
+      const saleId = (e as CustomEvent).detail;
+      if (saleId) {
+        setSelectedSaleDetailId(saleId);
+      }
+    };
+    const handleFilterAbandoned = () => {
+      setSearchTerm('Abandonada');
+    };
+    window.addEventListener('open-sale-details', handleOpenSale);
+    window.addEventListener('filter-abandoned-sales', handleFilterAbandoned);
+    return () => {
+      window.removeEventListener('open-sale-details', handleOpenSale);
+      window.removeEventListener('filter-abandoned-sales', handleFilterAbandoned);
+    };
+  }, []);
 
   // Handle setting up default dates upon opening Modal
   useEffect(() => {
@@ -143,7 +164,7 @@ export const HomeView: React.FC = () => {
       setSelectedPackageId('');
       setSpecialPhotoQty('');
       setPaymentRows([
-        { forma: '', valor: '' }
+        { forma: '', valor: '', taxaId: '' }
       ]);
       setIsConfirmingLaunchDelete(false);
       setValidationError(null);
@@ -217,11 +238,12 @@ export const HomeView: React.FC = () => {
     if (sale.pagamentos && sale.pagamentos.length > 0) {
       setPaymentRows(sale.pagamentos.map(p => ({
         forma: p.forma,
-        valor: String(p.valor)
+        valor: String(p.valor),
+        taxaId: (p as any).taxaId || (p.alboomPay ? 'alboom-pay-default' : '')
       })));
     } else {
       setPaymentRows([
-        { forma: sale.formaPagamento || '', valor: String(sale.valorTotal || '') }
+        { forma: sale.formaPagamento || '', valor: String((sale.valorTotal + (sale.alboomTax || 0)) || ''), taxaId: sale.alboomTax ? 'alboom-pay-default' : '' }
       ]);
     }
     
@@ -319,7 +341,8 @@ export const HomeView: React.FC = () => {
         const clientMatch = sale.nomeCliente.toLowerCase().includes(query);
         const phoneMatch = sale.whatsapp.includes(query);
         const hostMatch = (sale.hospedagem || '').toLowerCase().includes(query);
-        if (!clientMatch && !phoneMatch && !hostMatch) {
+        const statusMatch = sale.status.toLowerCase().includes(query);
+        if (!clientMatch && !phoneMatch && !hostMatch && !statusMatch) {
           return false;
         }
       }
@@ -460,33 +483,62 @@ export const HomeView: React.FC = () => {
 
   // Ledger summary details metrics
   const grossRevenue = useMemo(() => {
-    return paidSalesInPeriod.reduce((acc, s) => acc + s.valorTotal, 0);
+    return paidSalesInPeriod.reduce((acc, s) => {
+      return acc + (s.valorTotal || 0);
+    }, 0);
   }, [paidSalesInPeriod]);
+
+  const totalDescontoAplicado = useMemo(() => {
+    return paidSalesInPeriod.reduce((acc, s) => acc + (s.descontoManual || 0), 0);
+  }, [paidSalesInPeriod]);
+
+  const totalAlboomTax = useMemo(() => {
+    return paidSalesInPeriod.reduce((acc, s) => {
+      const taxes = calculateSaleTaxes(s, feeRules);
+      return acc + taxes.totalTax;
+    }, 0);
+  }, [paidSalesInPeriod, feeRules]);
 
   const personalCommission = useMemo(() => {
     return paidSalesInPeriod.reduce((acc, s) => {
       const act = activities.find(a => a.id === s.atividadeId);
-      return acc + calculateCollaboratorCommission(s, currentUser, act);
+      const rawComm = calculateCollaboratorCommission(s, currentUser, act);
+      return acc + rawComm;
     }, 0);
   }, [paidSalesInPeriod, activities, currentUser]);
 
-  const totalCommissions = useMemo(() => {
+  const totalTeamCommissions = useMemo(() => {
     return paidSalesInPeriod.reduce((acc, s) => {
       const collab = collaborators.find(c => c.id === s.vendedorId);
-      const partner = partners.find(p => p.id === s.parceiroId);
       const act = activities.find(a => a.id === s.atividadeId);
-
       const isCollabAdmin = isAdminCollaborator(collab);
       const sComm = isCollabAdmin ? 0 : calculateCollaboratorCommission(s, collab, act);
-      const pComm = calculatePartnerCommission(s, partner, act);
-
-      return acc + sComm + pComm;
+      return acc + sComm;
     }, 0);
-  }, [paidSalesInPeriod, collaborators, partners, activities]);
+  }, [paidSalesInPeriod, collaborators, activities]);
+
+  const totalPartnerCommissions = useMemo(() => {
+    return paidSalesInPeriod.reduce((acc, s) => {
+      const partner = partners.find(p => p.id === s.parceiroId);
+      const act = activities.find(a => a.id === s.atividadeId);
+      const pComm = calculatePartnerCommission(s, partner, act);
+      return acc + pComm;
+    }, 0);
+  }, [paidSalesInPeriod, partners, activities]);
+
+  const totalCommissions = useMemo(() => {
+    return totalTeamCommissions + totalPartnerCommissions;
+  }, [totalTeamCommissions, totalPartnerCommissions]);
+
+  const totalFixedReportFees = useMemo(() => {
+    return feeRules
+      .filter(r => !r.arquivado && r.exibirApenasConsolidado)
+      .reduce((acc, r) => acc + (r.valorConsolidadoRelatorio || 0), 0);
+  }, [feeRules]);
 
   const finalBalance = useMemo(() => {
-    return grossRevenue - totalCommissions;
-  }, [grossRevenue, totalCommissions]);
+    return grossRevenue - totalTeamCommissions - totalPartnerCommissions - totalAlboomTax - totalFixedReportFees;
+  }, [grossRevenue, totalTeamCommissions, totalPartnerCommissions, totalAlboomTax, totalFixedReportFees]);
 
   // 3. REPASSES / PAYROLLS FOR LISTINGS
   const teamPayroll = useMemo(() => {
@@ -497,7 +549,8 @@ export const HomeView: React.FC = () => {
           .filter(s => s.vendedorId === collab.id)
           .reduce((sum, sale) => {
             const act = activities.find(a => a.id === sale.atividadeId);
-            return sum + calculateCollaboratorCommission(sale, collab, act);
+            const rawComm = calculateCollaboratorCommission(sale, collab, act);
+            return sum + rawComm;
           }, 0);
 
         const roleStr = collab.cargo === 'Admin' ? 'Administrador' : 'Fotógrafo';
@@ -832,6 +885,23 @@ export const HomeView: React.FC = () => {
     });
   }, [formData.fotosVendidas, formData.pessoas, packages, formPeopleCount]);
 
+  // Auto-calculate fotosVendidas for packages with a closed limit/photo-allotment per person
+  useEffect(() => {
+    if (currentSelectedPackage && currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
+      const ppl = Math.max(1, parseInt(formData.pessoas, 10) || 1);
+      const expectedPhotos = currentSelectedPackage.limiteFotosPorPessoa * ppl;
+      setFormData(prev => {
+        if (prev.fotosVendidas !== String(expectedPhotos)) {
+          return {
+            ...prev,
+            fotosVendidas: String(expectedPhotos)
+          };
+        }
+        return prev;
+      });
+    }
+  }, [selectedPackageId, formData.pessoas, currentSelectedPackage]);
+
   const effectiveCartItems = useMemo(() => {
     if (!currentSelectedPackage) {
       return cartItems;
@@ -863,6 +933,20 @@ export const HomeView: React.FC = () => {
 
     return [...cartItems, tempItem];
   }, [cartItems, currentSelectedPackage, selectedPackageId, currentItemCalculatedSubtotal, specialPhotoQty, formData.fotosVendidas]);
+
+  const liveAlboomTax = useMemo(() => {
+    return paymentRows
+      .filter(row => row.forma && row.taxaId)
+      .reduce((sum, row) => {
+        if (row.taxaId === 'alboom-pay-default') {
+          return sum + (parseFloat(row.valor) || 0) * 0.0099;
+        }
+        const rule = feeRules.find(r => r.id === row.taxaId);
+        if (!rule) return sum;
+        const pct = (rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0);
+        return sum + (parseFloat(row.valor) || 0) * (pct / 100);
+      }, 0);
+  }, [paymentRows, feeRules]);
 
   const liveTotalValue = useMemo(() => {
     const basketSum = effectiveCartItems.reduce((acc, item) => acc + item.subtotal, 0);
@@ -1009,6 +1093,16 @@ export const HomeView: React.FC = () => {
       return;
     }
 
+    // Safety lock: Validate payment sum matches total sale value
+    if (formData.status === 'Pago') {
+      const sumPayments = paymentRows.reduce((sum, r) => sum + (parseFloat(r.valor) || 0), 0);
+      const diff = Math.abs(sumPayments - liveTotalValue);
+      if (diff > 0.02) {
+        setValidationError(`A soma das formas de pagamento (${formatCurrency(sumPayments)}) não bate com o valor total da venda (${formatCurrency(liveTotalValue)})! Corrija antes de salvar.`);
+        return;
+      }
+    }
+
     // If payment date is cleared but status is Paid, auto set payment date to today
     let finalPayDate = editingSale?.dataPagamento;
     if (formData.status === 'Pago') {
@@ -1020,14 +1114,50 @@ export const HomeView: React.FC = () => {
     // Build pagamentos list for saving
     const pgList = paymentRows
       .filter(row => row.forma)
-      .map(row => ({
-        forma: row.forma,
-        valor: parseFloat(row.valor) || 0
-      }));
+      .map(row => {
+        const val = parseFloat(row.valor) || 0;
+        const selectedTaxId = row.taxaId || '';
+        const isAlboom = selectedTaxId === 'alboom-pay-default';
+        const rule = feeRules.find(r => r.id === selectedTaxId);
+        let taxAmt = 0;
+        if (rule) {
+          const pct = (rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0);
+          taxAmt = val * (pct / 100);
+        }
+        return {
+          forma: row.forma,
+          valor: val,
+          alboomPay: isAlboom,
+          alboomTax: isAlboom ? (val * 0.0099) : taxAmt,
+          taxaId: selectedTaxId || undefined
+        };
+      });
 
     // Backwards-compatible comma list for single-method lookups
     const uniqueMethods = Array.from(new Set(paymentRows.map(row => row.forma).filter(Boolean)));
     const finalFormaPagamento = uniqueMethods.join(', ');
+
+    let finalNotas = formData.notas.trim();
+    const alboomNotesList = paymentRows
+      .filter(row => row.forma && row.taxaId)
+      .map(row => {
+        const val = parseFloat(row.valor) || 0;
+        const rule = feeRules.find(r => r.id === row.taxaId);
+        if (!rule) return '';
+        const pct = (rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0);
+        const taxAmt = val * (pct / 100);
+        return `Pagamento via ${rule.nome} aplicado em ${row.forma}. Taxa cobrada: R$ ${taxAmt.toFixed(2).replace('.', ',')}.`;
+      })
+      .filter(Boolean);
+    
+    if (alboomNotesList.length > 0) {
+      const alboomSuffix = alboomNotesList.join(' ');
+      if (!finalNotas.includes('Pagamento via')) {
+        finalNotas = finalNotas ? `${finalNotas} | ${alboomSuffix}` : alboomSuffix;
+      }
+    }
+
+    const basketSum = effectiveCartItems.reduce((acc, item) => acc + item.subtotal, 0);
 
     const payload = {
       data: formData.data,
@@ -1042,11 +1172,13 @@ export const HomeView: React.FC = () => {
       fotosVendidas: parseInt(formData.fotosVendidas, 10) || 0,
       sacolaItens: effectiveCartItems,
       descontoManual: parseFloat(formData.descontoManual) || 0,
+      valorBruto: liveTotalValue,
       valorTotal: liveTotalValue,
       formaPagamento: finalFormaPagamento,
       pagamentos: pgList,
+      alboomTax: liveAlboomTax,
       status: formData.status as 'Pago' | 'Pendente' | 'Abandonada' | 'Cancelado',
-      notas: formData.notas.trim(),
+      notas: finalNotas,
       vendedorId: formData.vendedorId || currentUser.id,
       dataPagamento: finalPayDate
     };
@@ -1067,6 +1199,11 @@ export const HomeView: React.FC = () => {
   const toggleRowExpansion = (id: string) => {
     setExpandedSales(prev => ({ ...prev, [id]: !prev[id] }));
   };
+
+  const months = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
 
   return (
     <div className="space-y-6 animate-fade-in text-slate-850">
@@ -1187,7 +1324,7 @@ export const HomeView: React.FC = () => {
           <>
             {/* Metric 1: Faturamento Bruto Total (Regime de Caixa) */}
             <div className="bg-white p-6 rounded-3xl border border-l-8 border-l-emerald-500 border-slate-200/80 shadow-xs relative group hover:border-emerald-300 hover:shadow-md transition-all bg-gradient-to-br from-white to-emerald-50/10">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl w-fit mb-4 border border-emerald-100">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl w-fit mb-4 border border-emerald-100 flex items-center justify-between w-full">
                 <DollarSign className="w-5 h-5" />
               </div>
               <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Faturamento Efetuado (Caixa)</p>
@@ -1201,16 +1338,34 @@ export const HomeView: React.FC = () => {
 
             {/* Metric 2: Comissões Gerais a Pagar */}
             <div className="bg-white p-6 rounded-3xl border border-l-8 border-l-purple-500 border-slate-200/80 shadow-xs relative group hover:border-purple-300 hover:shadow-md transition-all bg-gradient-to-br from-white to-purple-50/10">
-              <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl w-fit mb-4 border border-purple-100">
+              <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl w-fit mb-4 border border-purple-100 flex items-center justify-between w-full">
                 <Users className="w-5 h-5" />
+                <button
+                  type="button"
+                  onClick={() => setIsAlboomModalOpen(true)}
+                  className="text-[9px] bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold uppercase px-2.5 py-1 rounded-lg transition"
+                >
+                  Alboom Pay
+                </button>
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Comissões de Equipe e Parceiros</p>
-              <h3 className="text-3xl font-black text-slate-900 mt-2.5 font-mono tracking-tight">
-                {formatCurrency(totalCommissions)}
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Comissões, Taxas & Descontos</p>
+              <h3 className="text-2xl font-black text-slate-900 mt-2.5 font-mono tracking-tight">
+                {formatCurrency(totalCommissions + totalAlboomTax + totalFixedReportFees)}
               </h3>
-              <p className="text-[10px] text-purple-800 bg-purple-50/65 border border-purple-250 px-2 py-0.5 mt-2 rounded-lg font-bold uppercase tracking-wide inline-block leading-none">
-                ● splits devidos a parceiros/equipe
-              </p>
+              <div className="mt-3 space-y-1 bg-purple-50/40 p-2.5 rounded-2xl border border-purple-100/30 text-[10px] font-bold text-purple-900 font-sans">
+                <div className="flex justify-between">
+                  <span>Equipe All Angle:</span>
+                  <span className="font-mono">{formatCurrency(totalTeamCommissions)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Parceiros & Indicações:</span>
+                  <span className="font-mono">{formatCurrency(totalPartnerCommissions)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Taxas & Descontos:</span>
+                  <span className="font-mono">{formatCurrency(totalAlboomTax + totalFixedReportFees)}</span>
+                </div>
+              </div>
             </div>
 
             {/* Metric 3: Saldo Final Reconciliado */}
@@ -1218,12 +1373,12 @@ export const HomeView: React.FC = () => {
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4 border border-indigo-100">
                 <Landmark className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Faturamento Líquido Estimado</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Saldo Líquido Final (All Angle)</p>
               <h3 className="text-3xl font-black text-indigo-700 mt-2.5 font-mono tracking-tight">
                 {formatCurrency(finalBalance)}
               </h3>
               <p className="text-[10px] text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 mt-2 rounded-lg font-bold uppercase tracking-wide inline-block leading-none">
-                ➔ Caixa após deduções operacionais
+                ➔ Caixa após descontos, repasses e taxas
               </p>
             </div>
           </>
@@ -1262,7 +1417,7 @@ export const HomeView: React.FC = () => {
               <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl w-fit mb-4 border border-purple-100">
                 <CheckCircle className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Minhas comissões a receber</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Sua Comissão</p>
               <h3 className="text-3xl font-black text-purple-700 mt-2.5 font-mono tracking-tight">
                 {formatCurrency(personalCommission)}
               </h3>
@@ -1330,6 +1485,15 @@ export const HomeView: React.FC = () => {
               >
                 Folha de Parceiros
               </button>
+              
+              <button
+                type="button"
+                onClick={() => setIsAlboomModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer text-indigo-700 bg-indigo-50 hover:bg-indigo-100 flex items-center gap-1.5 border border-indigo-200"
+              >
+                <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Alboom Pay</span>
+              </button>
             </>
           )}
         </div>
@@ -1374,10 +1538,22 @@ export const HomeView: React.FC = () => {
 
           {/* CHRONOLOGICAL CURRENT MONTH RELEASES & PAST PENDENCIES GROUPED */}
           <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
-            <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-5 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-500" />
-              <span>Cronograma de Lançamentos ({activeMonthSales.length + carryoverSales.length} faturamentos)</span>
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-3 border-b border-slate-100">
+              <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-500" />
+                <span>Cronograma de Lançamentos ({activeMonthSales.length + carryoverSales.length} faturamentos)</span>
+              </h3>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsAlboomModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-xl text-xs font-black uppercase tracking-wider shadow-xs hover:scale-[1.02] active:scale-95 transition-all cursor-pointer border border-indigo-700 font-sans"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-white" />
+                  <span>Ver Detalhamento Alboom Pay</span>
+                </button>
+              )}
+            </div>
 
             {timelineBlocks.length === 0 ? (
               <div className="text-center py-16 text-slate-400">
@@ -1462,6 +1638,11 @@ export const HomeView: React.FC = () => {
                             sale.status === 'Cancelado' ? 'border-l-8 border-l-slate-400' :
                             'border-l-8 border-l-amber-500';
 
+                          const sAct = activities.find(a => a.id === sale.atividadeId);
+                          const rawCollabComm = Number(calculateCollaboratorCommission(sale, sCollab, sAct));
+                          const alboomDiscount = 0;
+                          const collabComm = rawCollabComm;
+
                           return (
                             <div 
                               key={sale.id}
@@ -1471,43 +1652,90 @@ export const HomeView: React.FC = () => {
                               } ${isCancelado ? 'opacity-65' : ''}`}
                               id={`row-sale-item-${sale.id}`}
                             >
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-left">
-                                <span className="text-xs font-black text-slate-900 font-sans tracking-tight uppercase">{sale.nomeCliente}</span>
-                                
-                                <span 
-                                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200/50 uppercase"
-                                  style={(() => {
-                                    const actObj = activities.find(a => a.id === sale.atividadeId);
-                                    return getInlineTagStyle(actObj?.corTag || '#94a3b8');
-                                  })()}
-                                >
-                                  <ActivityIcon className="w-3 h-3 shrink-0" />
-                                  {activities.find(a => a.id === sale.atividadeId)?.nomeAtividade || 'Atividade'}
-                                </span>
-
-                                {/* Admin Staff Badge */}
-                                {isAdmin && (
+                              <div className="flex flex-col gap-1 text-left">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                  <span className="text-xs font-black text-slate-900 font-sans tracking-tight uppercase">{sale.nomeCliente}</span>
+                                  
                                   <span 
-                                    className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase font-sans whitespace-nowrap"
-                                    style={getInlineTagStyle(sCollab?.corTag || '#6366f1')}
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200/50 uppercase"
+                                    style={(() => {
+                                      const actObj = activities.find(a => a.id === sale.atividadeId);
+                                      return getInlineTagStyle(actObj?.corTag || '#94a3b8');
+                                    })()}
                                   >
-                                    <User className="w-3 h-3 shrink-0" />
-                                    <span>Fotógrafo: <strong>{getTeammateName(sCollab)}</strong></span>
+                                    <ActivityIcon className="w-3 h-3 shrink-0" />
+                                    {activities.find(a => a.id === sale.atividadeId)?.nomeAtividade || 'Atividade'}
                                   </span>
-                                )}
 
-                                {/* Attention recovery alert for 7+ days abandoned */}
-                                {showRecoveryAlert && (
-                                  <span className="inline-flex items-center gap-1.5 text-[9px] font-black bg-rose-600 text-white px-2.5 py-1 rounded-full uppercase shadow-xs animate-bounce border border-rose-700">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-white animate-pulse" />
-                                    <span>Recuperar Venda ({getDaysSinceLaunch(sale.data)}d abandonada)</span>
-                                  </span>
-                                )}
+                                  {/* Admin Staff Badge */}
+                                  {isAdmin && (
+                                    <span 
+                                      className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase font-sans whitespace-nowrap"
+                                      style={getInlineTagStyle(sCollab?.corTag || '#6366f1')}
+                                    >
+                                      <User className="w-3 h-3 shrink-0" />
+                                      <span>Fotógrafo: <strong>{getTeammateName(sCollab)}</strong></span>
+                                    </span>
+                                  )}
 
-                                {overPhotosWarning && (
-                                  <span className="text-[9px] bg-amber-100 text-amber-850 font-bold px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1 animate-pulse">
-                                    <AlertCircle className="w-3 h-3" /> Excesso de fotos
-                                  </span>
+                                  {/* Attention recovery alert for 7+ days abandoned */}
+                                  {showRecoveryAlert && (
+                                    <span className="inline-flex items-center gap-1.5 text-[9px] font-black bg-rose-600 text-white px-2.5 py-1 rounded-full uppercase shadow-xs animate-bounce border border-rose-700">
+                                      <AlertTriangle className="w-3.5 h-3.5 text-white animate-pulse" />
+                                      <span>Recuperar Venda ({getDaysSinceLaunch(sale.data)}d abandonada)</span>
+                                    </span>
+                                  )}
+
+                                  {overPhotosWarning && (
+                                    <span className="text-[9px] bg-amber-100 text-amber-850 font-bold px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1 animate-pulse">
+                                      <AlertCircle className="w-3 h-3" /> Excesso de fotos
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Values breakdown detail in timeline */}
+                                {sale.status === 'Pago' && (
+                                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] font-sans font-extrabold text-slate-500">
+                                    <span>Inicial: <strong className="font-mono text-slate-900">{formatCurrency((sale.valorTotal || 0) + (sale.descontoManual || 0))}</strong></span>
+                                    {sale.descontoManual > 0 && (
+                                      <span className="text-rose-600">Desconto: <strong className="font-mono text-rose-700">-{formatCurrency(sale.descontoManual)}</strong></span>
+                                    )}
+                                    <span>Total: <strong className="font-mono text-emerald-800">{formatCurrency(sale.valorTotal)}</strong></span>
+                                    {isAdmin ? (
+                                      <>
+                                        {collabComm > 0 && (
+                                          <span>Fotógrafo: <strong className="font-mono text-indigo-700">{formatCurrency(collabComm)}</strong></span>
+                                        )}
+                                        {(() => {
+                                          const pComm = calculatePartnerCommission(sale, partners.find(p => p.id === sale.parceiroId), activities.find(a => a.id === sale.atividadeId));
+                                          return pComm > 0 ? (
+                                            <span>Parceria: <strong className="font-mono text-emerald-700">{formatCurrency(pComm)}</strong></span>
+                                          ) : null;
+                                        })()}
+                                        {(() => {
+                                          const tTax = calculateSaleTaxes(sale, feeRules).totalTax;
+                                          return tTax > 0 ? (
+                                            <span>Taxas: <strong className="font-mono text-rose-700">{formatCurrency(tTax)}</strong></span>
+                                          ) : null;
+                                        })()}
+                                        {(() => {
+                                          const pComm = calculatePartnerCommission(sale, partners.find(p => p.id === sale.parceiroId), activities.find(a => a.id === sale.atividadeId));
+                                          const tTax = calculateSaleTaxes(sale, feeRules).totalTax;
+                                          const netVal = Math.max(0, sale.valorTotal - collabComm - pComm - tTax);
+                                          return (
+                                            <span>Líquido: <strong className="font-mono text-slate-950 bg-slate-100 px-1.5 py-0.5 rounded">{formatCurrency(netVal)}</strong></span>
+                                          );
+                                        })()}
+                                      </>
+                                    ) : (
+                                      collabComm > 0 && (
+                                        <span>Minha Comissão: <strong className="font-mono text-indigo-700">{formatCurrency(collabComm)}</strong></span>
+                                      )
+                                    )}
+                                    {sale.descontoManual > 0 && (
+                                      <span className="text-amber-700">Desconto Comercial: <strong className="font-mono">{formatCurrency(sale.descontoManual)}</strong></span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
 
@@ -1550,7 +1778,7 @@ export const HomeView: React.FC = () => {
                                     className={`p-1.5 rounded-xl border transition cursor-pointer select-none inline-flex items-center justify-center shrink-0 ${
                                       quickConfirmDeleteId === sale.id 
                                         ? 'bg-rose-600 border-rose-750 text-white animate-pulse text-[9px] font-extrabold px-2.5 py-1 uppercase tracking-wider'
-                                        : 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-700'
+                                        : 'bg-rose-700 hover:bg-rose-800 border-rose-800 text-white font-extrabold'
                                     }`}
                                     title={quickConfirmDeleteId === sale.id ? 'Refirma?' : 'Excluir faturamento'}
                                   >
@@ -1702,7 +1930,7 @@ export const HomeView: React.FC = () => {
                                           className={`p-1 border rounded transition cursor-pointer select-none inline-flex items-center justify-center shrink-0 ${
                                             quickConfirmDeleteId === sale.id 
                                               ? 'bg-rose-600 border-rose-700 text-white font-extrabold px-2 py-0.5 text-[9px]'
-                                              : 'bg-rose-100 border-rose-200 text-rose-700 hover:bg-rose-200 hover:border-rose-300'
+                                              : 'bg-rose-700 border-rose-800 text-white hover:bg-rose-800 hover:border-rose-900 font-extrabold'
                                           }`}
                                         >
                                           {quickConfirmDeleteId === sale.id ? 'Confirma?' : <Trash2 className="w-3.5 h-3.5" />}
@@ -1760,7 +1988,7 @@ export const HomeView: React.FC = () => {
                       <th className="pb-3 text-slate-500">Cliente</th>
                       <th className="pb-3 text-slate-500">Atividade</th>
                       <th className="pb-3 text-slate-500">Fotógrafo</th>
-                      <th className="pb-3 text-right text-slate-500">Valor Bruto</th>
+                      <th className="pb-3 text-right text-slate-500">Valor Inicial</th>
                       {isAdmin && (
                         <>
                           <th className="pb-3 text-right text-slate-500">Comissão Equipe</th>
@@ -1777,9 +2005,11 @@ export const HomeView: React.FC = () => {
                       const act = activities.find(a => a.id === s.atividadeId);
 
                       const isCollabAdmin = isAdminCollaborator(collab);
-                      const collabComm = isCollabAdmin ? 0 : calculateCollaboratorCommission(s, collab, act);
+                      const rawCollabComm = isCollabAdmin ? 0 : calculateCollaboratorCommission(s, collab, act);
+                      const sAlboomDiscount = s.alboomTax ? (s.alboomTax / 2) : 0;
+                      const collabComm = Math.max(0, rawCollabComm - sAlboomDiscount);
                       const partnerComm = calculatePartnerCommission(s, partner, act);
-                      const netRetained = s.valorTotal - collabComm - partnerComm;
+                      const netRetained = s.valorTotal - collabComm - partnerComm - (s.alboomTax || 0);
 
                       return (
                         <tr key={s.id} className="hover:bg-slate-50/50 transition">
@@ -1804,10 +2034,12 @@ export const HomeView: React.FC = () => {
                                 {getTeammateName(collab)}
                               </span>
                             ) : (
-                              <span className="text-slate-400">N/A</span>
+                            <span className="text-slate-400">N/A</span>
                             )}
                           </td>
-                          <td className="py-3 text-right font-mono font-bold text-slate-900">{formatCurrency(s.valorTotal)}</td>
+                          <td className="py-3 text-right font-mono font-bold text-slate-900">
+                            {formatCurrency((s.valorTotal || 0) + (s.descontoManual || 0))}
+                          </td>
                           {isAdmin && (
                             <>
                               <td className="py-3 text-right font-mono text-amber-700 font-semibold">{formatCurrency(collabComm)}</td>
@@ -1974,7 +2206,7 @@ export const HomeView: React.FC = () => {
 
             {/* Standardized popup window wrapper */}
             <motion.div
-              className="relative w-full max-w-4xl bg-slate-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl my-auto flex flex-col focus:outline-none overflow-hidden text-white"
+              className="relative w-full max-w-5xl bg-slate-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl my-auto flex flex-col focus:outline-none overflow-hidden text-white"
               initial={{ scale: 0.95, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 20, opacity: 0 }}
@@ -2391,115 +2623,253 @@ export const HomeView: React.FC = () => {
 
                 {/* 3. SECTOR THREE: TRANSACTION STATUS & VALUES */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4.5 bg-white/5 p-5 rounded-2xl border border-white/5">
-                  <div className="col-span-4 mb-1 -mt-1">
-                    <span className="text-[10px] text-indigo-400 font-extrabold uppercase tracking-widest">DADOS DO LANÇAMENTO</span>
-                  </div>
+                  
+                  {/* Title and selectors header row */}
+                  <div className="col-span-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-2 pb-3 border-b border-white/10">
+                    <span className="text-[10px] text-indigo-400 font-extrabold uppercase tracking-widest shrink-0">DADOS DO LANÇAMENTO</span>
+                    <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center w-full lg:w-auto">
+                      {/* Vendedor associado (Disabled for Staff) */}
+                      <div className="w-full sm:w-64 text-left">
+                        <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Fotógrafo / Vendedor</label>
+                        <select
+                          value={formData.vendedorId}
+                          disabled={!isAdmin}
+                          onChange={(e) => setFormData({ ...formData, vendedorId: e.target.value })}
+                          className="w-full bg-[#1e293b] disabled:opacity-60 border border-white/10 px-3 py-2 text-sm rounded-xl block mt-1 text-white font-bold animate-fade-in text-left cursor-pointer"
+                        >
+                          <option value="">Selecione...</option>
+                          {collaborators.map(c => (
+                            <option key={c.id} value={c.id}>{getTeammateName(c)}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                  {/* Vendedor associado (Disabled for Staff) */}
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Fotógrafo / Vendedor</label>
-                    <select
-                      value={formData.vendedorId}
-                      disabled={!isAdmin}
-                      onChange={(e) => setFormData({ ...formData, vendedorId: e.target.value })}
-                      className="w-full bg-[#1e293b] disabled:opacity-60 border border-white/10 px-3 py-2 text-sm rounded-xl block mt-1 text-white font-bold animate-fade-in text-left"
-                    >
-                      <option value="">Selecione...</option>
-                      {collaborators.map(c => (
-                        <option key={c.id} value={c.id}>{getTeammateName(c)}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Status Banner */}
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Status do Lançamento</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-sm rounded-xl block font-bold text-center mt-1 text-white animate-fade-in"
-                    >
-                      <option value="Pago" className="text-emerald-400 font-bold">PAGO</option>
-                      <option value="Pendente" className="text-amber-400 font-bold">Pendente</option>
-                      <option value="Abandonada" className="text-rose-400 font-bold">Abandonada</option>
-                      <option value="Cancelado" className="text-slate-400 font-bold">Cancelado</option>
-                    </select>
-                  </div>
-
-                  {/* MULTIPLE PAYMENT METHODS SECTION */}
-                  <div className="md:col-span-4 space-y-4 bg-slate-950/20 p-4 rounded-2xl border border-white/5 text-left">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-                      <span className="text-[10px] text-white/50 font-black uppercase tracking-wider block">Formas de Pagamento</span>
-                      
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPaymentRows(prev => [...prev, { forma: '', valor: '' }]);
-                        }}
-                        className="inline-flex items-center gap-1.5 text-[9px] bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-3 py-2 rounded-xl border border-indigo-500/20 transition cursor-pointer text-left shrink-0"
-                      >
-                        <Plus className="w-3 h-3 shrink-0" />
-                        <span>+ Adicionar forma de pagamento</span>
-                      </button>
+                      {/* Status Banner */}
+                      <div className="w-full sm:w-52 text-left">
+                        <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Status do Lançamento</label>
+                        <select
+                          value={formData.status}
+                          onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                          className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-sm rounded-xl block font-bold text-center mt-1 text-white animate-fade-in cursor-pointer"
+                        >
+                          <option value="Pago" className="text-emerald-400 font-bold">PAGO</option>
+                          <option value="Pendente" className="text-amber-400 font-bold">Pendente</option>
+                          <option value="Abandonada" className="text-rose-400 font-bold">Abandonada</option>
+                          <option value="Cancelado" className="text-slate-400 font-bold">Cancelado</option>
+                        </select>
+                      </div>
                     </div>
+                  </div>
 
+                   {/* MULTIPLE PAYMENT METHODS SECTION - OCCUPIES 100% OF HORIZONTAL WIDTH (col-span-4) */}
+                   <div className="col-span-4 space-y-4 bg-slate-950/20 p-4 rounded-2xl border border-white/5 text-left">
+                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
+                       <span className="text-[10px] text-white/50 font-black uppercase tracking-wider block">Formas de Pagamento</span>
+                       
+                       <button
+                         type="button"
+                         onClick={() => {
+                           setPaymentRows(prev => [...prev, { forma: '', valor: '', taxaId: '' }]);
+                         }}
+                         className="inline-flex items-center gap-1.5 text-[9px] bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-3 py-2 rounded-xl border border-indigo-500/20 transition cursor-pointer text-left shrink-0"
+                       >
+                         <Plus className="w-3 h-3 shrink-0" />
+                         <span>+ Adicionar forma de pagamento</span>
+                       </button>
+                     </div>
+ 
                     <div className="space-y-3">
                       {paymentRows.map((row, index) => (
-                        <div key={index} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5 animate-fade-in">
-                          <div className="flex-1">
-                            <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Método</label>
-                            <select
-                              value={row.forma}
-                              onChange={(e) => {
-                                const newRows = [...paymentRows];
-                                newRows[index].forma = e.target.value;
-                                setPaymentRows(newRows);
-                              }}
-                              className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-xs rounded-xl text-white font-bold"
-                            >
-                              <option value="" disabled hidden>Selecione...</option>
-                              <option value="PIX">PIX</option>
-                              <option value="Cartão de Crédito">Cartão de Crédito</option>
-                              <option value="Dinheiro">Dinheiro</option>
-                              <option value="Cartão de Débito">Cartão de Débito</option>
-                              <option value="PayPal">PayPal</option>
-                              <option value="Transferência">Transferência</option>
-                            </select>
-                          </div>
-
-                          <div className="w-full sm:w-48">
-                            <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Valor (R$)</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. 150.00"
-                              value={row.valor}
-                              onChange={(e) => {
-                                const numeric = e.target.value.replace(/[^0-9.]/g, '');
-                                const newRows = [...paymentRows];
-                                newRows[index].valor = numeric;
-                                setPaymentRows(newRows);
-                              }}
-                              className="w-full bg-slate-900 border border-white/10 px-3 py-2 text-xs rounded-xl text-white font-mono font-bold text-center focus:outline-none focus:border-indigo-500"
-                            />
-                          </div>
-
-                          {paymentRows.length > 1 && (
-                            <div className="flex items-end justify-center pt-2 sm:pt-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPaymentRows(prev => prev.filter((_, i) => i !== index));
+                        <div key={index} className="flex flex-col bg-slate-900/60 p-4 rounded-2xl border border-white/10 animate-fade-in space-y-3 text-left w-full">
+                          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full">
+                            {/* Metodo de pagamento */}
+                            <div className="flex-1 min-w-[180px] text-left font-bold">
+                              <label className="text-[10px] font-black uppercase text-white/60 tracking-wider">Forma de Pagamento #{index + 1}</label>
+                              <select
+                                value={row.forma}
+                                onChange={(e) => {
+                                  const newRows = [...paymentRows];
+                                  newRows[index].forma = e.target.value;
+                                  setPaymentRows(newRows);
                                 }}
-                                className="text-white hover:text-white p-2 bg-rose-700 hover:bg-rose-800 border border-rose-600 rounded-xl transition cursor-pointer shrink-0"
-                                title="Remover esta forma de pagamento"
+                                className="w-full bg-slate-800 border-2 border-slate-700 hover:border-slate-600 px-4 py-3 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 mt-1 text-white text-xs font-black cursor-pointer uppercase tracking-wider"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                <option value="" className="bg-slate-900 text-white">Selecione...</option>
+                                <option value="PIX" className="bg-slate-900 text-white">PIX</option>
+                                <option value="Crédito à Vista" className="bg-slate-900 text-white">Crédito à Vista</option>
+                                <option value="Crédito Parcelado" className="bg-slate-900 text-white">Crédito Parcelado</option>
+                                <option value="Débito" className="bg-slate-900 text-white">Débito</option>
+                                <option value="Dinheiro" className="bg-slate-900 text-white">Dinheiro</option>
+                                <option value="Boleto" className="bg-slate-900 text-white">Boleto</option>
+                                <option value="Cortesia / Bonificação" className="bg-slate-900 text-white">Cortesia / Bonificação</option>
+                                <option value="Faturamento Faturado" className="bg-slate-900 text-white">Faturamento Faturado</option>
+                              </select>
                             </div>
-                          )}
+
+                            {/* Valor */}
+                            <div className="w-full md:w-56 text-left font-bold">
+                              <label className="text-[10px] font-black uppercase text-white/60 tracking-wider">Valor do Pagamento</label>
+                              <div className="relative mt-1">
+                                <span className="absolute left-3 top-3.5 text-xs text-white/60 font-black">R$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0,00"
+                                  value={row.valor}
+                                  onChange={(e) => {
+                                    const newRows = [...paymentRows];
+                                    newRows[index].valor = e.target.value;
+                                    setPaymentRows(newRows);
+                                  }}
+                                  className="w-full bg-slate-800 border-2 border-slate-700 pl-8 pr-4 py-3 text-xs rounded-xl block focus:outline-none focus:border-indigo-500 text-white font-black font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Taxa/Desconto Selector */}
+                            <div className="flex-1 min-w-[240px] text-left font-bold">
+                              <label className="text-[10px] font-black uppercase text-white/60 tracking-wider">Taxa / Desconto</label>
+                              <select
+                                value={row.taxaId || ''}
+                                onChange={(e) => {
+                                  const newRows = [...paymentRows];
+                                  newRows[index].taxaId = e.target.value;
+                                  setPaymentRows(newRows);
+                                }}
+                                className="w-full bg-slate-800 border-2 border-slate-700 hover:border-slate-600 px-4 py-3 text-xs rounded-xl block focus:outline-none focus:border-indigo-500 mt-1 text-indigo-300 font-black cursor-pointer uppercase tracking-wider"
+                              >
+                                <option value="" className="bg-slate-900 text-white font-black">Sem Taxa / Desconto</option>
+                                {feeRules.filter(r => !r.arquivado && !r.exibirApenasConsolidado && r.id !== 'alboom-pay-default').map(rule => {
+                                  const totalVal = (rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0);
+                                  const isFixo = rule.tipoDesconto === 'fixo';
+                                  return (
+                                    <option key={rule.id} value={rule.id} className="bg-slate-900 text-indigo-200 font-black">
+                                      {rule.nome} ({isFixo ? `R$ ${totalVal.toFixed(2).replace('.', ',')}` : `${totalVal}%`})
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            {paymentRows.length > 1 && (
+                              <div className="flex items-end justify-center pt-2 sm:pt-4">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPaymentRows(prev => prev.filter((_, i) => i !== index));
+                                  }}
+                                  className="text-white hover:text-white p-3 bg-rose-700 hover:bg-rose-800 border border-rose-600 rounded-xl transition cursor-pointer shrink-0"
+                                  title="Remover esta forma de pagamento"
+                                >
+                                  <Trash2 className="w-4 h-4 text-white" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {row.taxaId && (() => {
+                            const selectedTaxId = row.taxaId;
+                            const val = parseFloat(row.valor) || 0;
+                            let ruleName = '';
+                            let compPct = 0;
+                            let teamPct = 0;
+                            let isFixo = false;
+                            
+                            if (selectedTaxId === 'alboom-pay-default') {
+                              ruleName = 'Alboom Pay';
+                              compPct = 0.495;
+                              teamPct = 0.495;
+                            } else {
+                              const r = feeRules.find(x => x.id === selectedTaxId);
+                              if (r) {
+                                ruleName = r.nome;
+                                compPct = r.aplicarAllAngle ? (r.porcentagemAllAngle || 0) : 0;
+                                teamPct = r.aplicarEquipe && !r.exibirApenasConsolidado ? (r.porcentagemEquipe || 0) : 0;
+                                isFixo = r.tipoDesconto === 'fixo';
+                              }
+                            }
+                            
+                            const compTax = isFixo ? compPct : val * (compPct / 100);
+                            const teamTax = isFixo ? teamPct : val * (teamPct / 100);
+                            const totTax = compTax + teamTax;
+                            
+                            if (totTax > 0) {
+                              return (
+                                <div className="text-[10px] text-indigo-300 font-extrabold pl-1 animate-fade-in text-left">
+                                  Taxa {ruleName} {isFixo ? '(Fixo)' : `(${(compPct + teamPct).toFixed(3)}%)`}:{' '}
+                                  <span className="font-mono text-white">R$ {totTax.toFixed(2).replace('.', ',')}</span>
+                                  {compTax > 0 && (
+                                    <span> (All Angle: R$ {compTax.toFixed(2).replace('.', ',')})</span>
+                                  )}
+                                  {teamTax > 0 && (
+                                    <span> (Equipe: R$ {teamTax.toFixed(2).replace('.', ',')})</span>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       ))}
                     </div>
+
+                    {/* Taxas & Descontos Informational Box */}
+                    {(() => {
+                      const activeRows = paymentRows.filter(row => row.taxaId);
+                      if (activeRows.length > 0) {
+                        let totalCompDiscount = 0;
+                        let totalTeamDiscount = 0;
+                        activeRows.forEach(row => {
+                          const val = parseFloat(row.valor) || 0;
+                          if (row.taxaId === 'alboom-pay-default') {
+                            totalCompDiscount += val * 0.00495;
+                            totalTeamDiscount += val * 0.00495;
+                          } else {
+                            const r = feeRules.find(x => x.id === row.taxaId);
+                            if (r) {
+                              const isFixo = r.tipoDesconto === 'fixo';
+                              if (r.aplicarAllAngle) {
+                                totalCompDiscount += isFixo ? (r.porcentagemAllAngle || 0) : val * ((r.porcentagemAllAngle || 0) / 100);
+                              }
+                              if (r.aplicarEquipe && !r.exibirApenasConsolidado) {
+                                totalTeamDiscount += isFixo ? (r.porcentagemEquipe || 0) : val * ((r.porcentagemEquipe || 0) / 100);
+                              }
+                            }
+                          }
+                        });
+                        
+                        if (totalCompDiscount > 0 || totalTeamDiscount > 0) {
+                          return (
+                            <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-3 flex items-start gap-2.5 mt-2 animate-fade-in text-left">
+                              <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                              <p className="text-[11px] text-indigo-300 leading-relaxed font-black normal-case">
+                                Este lançamento terá desconto de <span className="text-white">R$ {totalTeamDiscount.toFixed(2).replace('.', ',')}</span> para a equipe e <span className="text-white">R$ {totalCompDiscount.toFixed(2).replace('.', ',')}</span> para a All Angle (taxa total calculada de R$ {(totalCompDiscount + totalTeamDiscount).toFixed(2).replace('.', ',')}).
+                              </p>
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
+
+                    {/* Photos Count Mismatch Warning */}
+                    {(() => {
+                      if (currentSelectedPackage && currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
+                        const expectedPhotos = currentSelectedPackage.limiteFotosPorPessoa * formPeopleCount;
+                        const filledPhotos = parseInt(formData.fotosVendidas, 10) || 0;
+                        if (filledPhotos !== expectedPhotos) {
+                          return (
+                            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2.5 mt-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <p className="text-[10px] text-amber-300 leading-relaxed font-bold normal-case text-left">
+                                Atenção: O número de fotos preenchido (<strong>{filledPhotos}</strong>) difere do número de fotos do pacote para {formPeopleCount} {formPeopleCount === 1 ? 'pessoa' : 'pessoas'} (esperado: <strong>{expectedPhotos}</strong> fotos).
+                              </p>
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
 
                     {/* SUM vs TOTAL WARNING TRIGGER */}
                     {(() => {
@@ -2523,7 +2893,7 @@ export const HomeView: React.FC = () => {
                   </div>
 
                   {/* Notes text logs */}
-                  <div className="md:col-span-8 text-left font-bold">
+                  <div className="col-span-4 text-left font-bold">
                     <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Notas & Observações adicionais</label>
                     <input
                       type="text"
@@ -2545,6 +2915,12 @@ export const HomeView: React.FC = () => {
                     <div className="flex justify-between items-center text-xs font-semibold text-rose-400 border-b border-white/5 pb-2">
                       <span className="uppercase text-[9px] font-extrabold tracking-wider text-rose-300">Desconto Aplicado:</span>
                       <span className="font-mono font-bold">- {formatCurrency(parseFloat(formData.descontoManual) || 0)}</span>
+                    </div>
+                  )}
+                  {liveAlboomTax > 0 && (
+                    <div className="flex justify-between items-center text-xs font-semibold text-indigo-400 border-b border-white/5 pb-2">
+                      <span className="uppercase text-[9px] font-extrabold tracking-wider text-indigo-300">Taxa Alboom Pay:</span>
+                      <span className="font-mono font-bold text-indigo-400">- {formatCurrency(liveAlboomTax)}</span>
                     </div>
                   )}
                   <div className="flex justify-between items-end pt-1">
@@ -2594,7 +2970,7 @@ export const HomeView: React.FC = () => {
                       className={`inline-flex items-center gap-1.5 font-extrabold uppercase text-[10px] py-2 px-3 border rounded-xl focus:outline-none transition cursor-pointer ${
                         isConfirmingLaunchDelete
                           ? 'bg-rose-600 border-rose-700 text-white animate-pulse'
-                          : 'text-rose-700 bg-rose-100 hover:bg-rose-200 border-rose-200'
+                          : 'text-white bg-rose-700 hover:bg-rose-800 border-rose-800'
                       }`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -2673,7 +3049,7 @@ export const HomeView: React.FC = () => {
                 <div className="space-y-1 mb-8 text-left">
                   <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest block font-bold">AUDITORIA E CONSULTA DE LANÇAMENTO</span>
                   <h3 className="text-xl font-bold tracking-tight text-white uppercase">{detailSale.nomeCliente}</h3>
-                  <p className="text-slate-400 text-xs mt-1">ID do Lançamento: <span className="font-mono text-indigo-300 font-bold">{detailSale.id}</span> • Registrado em: <span className="font-mono text-slate-300 font-bold">{formatDate(detailSale.data)}</span></p>
+                  <p className="text-slate-400 text-xs mt-1">Registrado em: <span className="font-mono text-slate-300 font-bold">{formatDate(detailSale.data)}</span></p>
                 </div>
 
                 {/* Details layout Grid */}
@@ -2828,9 +3204,12 @@ export const HomeView: React.FC = () => {
                       <h4 className="text-[9px] font-black uppercase text-white/40 tracking-wider mb-2 font-bold">Distribuição de split</h4>
                       <div className="bg-[#111827] border border-white/10 p-4 rounded-xl space-y-2.5 font-bold text-xs">
                         {(() => {
-                          const vCommission = calculateCollaboratorCommission(detailSale, collab, act);
+                          const rawVCommission = calculateCollaboratorCommission(detailSale, collab, act);
+                          const vCommission = rawVCommission; // No alboomDiscount subtracted
                           const pCommission = calculatePartnerCommission(detailSale, partner, act);
-                          const companyRetention = Math.max(0, detailSale.valorTotal - vCommission - pCommission);
+                          const taxes = calculateSaleTaxes(detailSale, feeRules);
+                          const totalTax = taxes.totalTax;
+                          const companyRetention = Math.max(0, detailSale.valorTotal - vCommission - pCommission - totalTax);
 
                           return (
                             <div className="space-y-2">
@@ -2839,7 +3218,7 @@ export const HomeView: React.FC = () => {
                                 <strong className="text-white font-black font-mono">{formatCurrency(detailSale.valorTotal)}</strong>
                               </div>
                               
-                              <div className="flex justify-between text-indigo-300">
+                              <div className="flex justify-between text-indigo-300 font-extrabold">
                                 <span>Repasse Fotógrafo:</span>
                                 <strong className="font-mono">{formatCurrency(vCommission)}</strong>
                               </div>
@@ -2861,8 +3240,15 @@ export const HomeView: React.FC = () => {
                                     </p>
                                   )}
 
-                                  <div className="flex justify-between text-yellow-300 border-t border-white/5 pt-1.5 font-bold">
-                                    <span>Margem Líquida Retida Empresa:</span>
+                                  {totalTax > 0 && (
+                                    <div className="flex justify-between text-indigo-400 font-extrabold">
+                                      <span>Taxas / Descontos aplicados ({taxes.activeRuleName || 'Taxa'}):</span>
+                                      <strong className="font-mono">{formatCurrency(totalTax)}</strong>
+                                    </div>
+                                  )}
+
+                                  <div className="flex justify-between text-yellow-300 border-t border-white/5 pt-1.5 font-black">
+                                    <span>Lucro Líquido Empresa:</span>
                                     <strong className="font-mono">{formatCurrency(companyRetention)}</strong>
                                   </div>
                                 </>
@@ -3224,6 +3610,195 @@ export const HomeView: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isAlboomModalOpen && createPortal(
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full border border-slate-200 shadow-2xl p-6 relative animate-slide-up">
+            <button
+              onClick={() => setIsAlboomModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 pb-4 border-b border-slate-150 mb-4">
+              <CreditCard className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider font-sans">
+                Auditoria Alboom Pay - {isAnnualView ? `Ano de ${selectedYear}` : `${months[selectedMonth - 1]} de ${selectedYear}`}
+              </h3>
+            </div>
+
+            {isAdmin ? (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                  Listagem de vendas com taxas Alboom Pay no período selecionado. A taxa total de 0,99% é dividida em 50/50 entre All Angle (0,495%) e a Equipe (0,495%).
+                </p>
+
+                {(() => {
+                  const alboomSales = paidSalesInPeriod.filter(s => s.alboomTax && s.alboomTax > 0);
+                  if (alboomSales.length === 0) {
+                    return (
+                      <p className="text-xs text-slate-400 font-bold py-8 text-center bg-slate-50 rounded-2xl">
+                        Nenhum lançamento com taxa Alboom Pay no período selecionado.
+                      </p>
+                    );
+                  }
+
+                  const totalGross = alboomSales.reduce((acc, s) => {
+                    return acc + (s.valorTotal || 0);
+                  }, 0);
+                  const totalTax = alboomSales.reduce((acc, s) => acc + (s.alboomTax || 0), 0);
+                  const totalNet = totalGross - totalTax;
+
+                  return (
+                    <div className="space-y-4 font-sans">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-slate-50 p-4 border border-slate-150 rounded-2xl text-left">
+                          <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">Faturamento Bruto</span>
+                          <span className="text-lg font-black text-slate-950 font-mono mt-0.5 block">{formatCurrency(totalGross)}</span>
+                        </div>
+                        <div className="bg-indigo-50 p-4 border border-indigo-150 rounded-2xl text-left">
+                          <span className="text-[9px] text-indigo-600 font-black uppercase tracking-wider block">Total Taxas Alboom Pay</span>
+                          <span className="text-lg font-black text-indigo-800 font-mono mt-0.5 block">{formatCurrency(totalTax)}</span>
+                          <span className="text-[9px] text-indigo-500 font-bold block mt-0.5">(R$ {(totalTax / 2).toFixed(2)} Equipe / R$ {(totalTax / 2).toFixed(2)} All Angle)</span>
+                        </div>
+                        <div className="bg-emerald-50 p-4 border border-emerald-150 rounded-2xl text-left">
+                          <span className="text-[9px] text-emerald-600 font-black uppercase tracking-wider block">Valor Líquido Final</span>
+                          <span className="text-lg font-black text-emerald-800 font-mono mt-0.5 block">{formatCurrency(totalNet)}</span>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-150 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                              <th className="py-2.5 px-4">Data</th>
+                              <th className="py-2.5 px-4">Cliente</th>
+                              <th className="py-2.5 px-4">Fotógrafo</th>
+                              <th className="py-2.5 px-4 text-right">Valor Inicial</th>
+                              <th className="py-2.5 px-4 text-right">Taxa Alboom (0,99%)</th>
+                              <th className="py-2.5 px-4 text-right">Valor Líquido</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-705">
+                            {alboomSales.map(s => {
+                              const collab = collaborators.find(c => c.id === s.vendedorId);
+                              const tax = s.alboomTax || 0;
+                              return (
+                                <tr key={s.id} className="hover:bg-slate-50/50">
+                                  <td className="py-2.5 px-4 font-mono text-slate-500">{s.dataPagamento ? formatDate(s.dataPagamento) : formatDate(s.data)}</td>
+                                  <td className="py-2.5 px-4 font-bold text-slate-900">{s.nomeCliente}</td>
+                                  <td className="py-2.5 px-4">
+                                    {collab ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg border text-[9px] font-black uppercase" style={getInlineTagStyle(collab.corTag || '#475569')}>
+                                        {getTeammateName(collab)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">N/A</span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">
+                                    {formatCurrency((s.valorTotal || 0) + (s.descontoManual || 0))}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-right font-mono text-indigo-700 font-bold">{formatCurrency(tax)}</td>
+                                  <td className="py-2.5 px-4 text-right font-mono text-emerald-800 font-extrabold">{formatCurrency(s.valorTotal - tax)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                  Listagem de seus lançamentos que sofreram desconto Alboom Pay no período selecionado. O desconto de 0,495% é aplicado à comissão final a receber.
+                </p>
+
+                {(() => {
+                  const myAlboomSales = paidSalesInPeriod.filter(s => s.vendedorId === currentUser.id && s.alboomTax && s.alboomTax > 0);
+                  if (myAlboomSales.length === 0) {
+                    return (
+                      <p className="text-xs text-slate-400 font-bold py-8 text-center bg-slate-50 rounded-2xl">
+                        Nenhum lançamento com desconto Alboom Pay no período selecionado.
+                      </p>
+                    );
+                  }
+
+                  const totalGross = myAlboomSales.reduce((acc, s) => {
+                    return acc + (s.valorTotal || 0);
+                  }, 0);
+                  const totalDiscount = myAlboomSales.reduce((acc, s) => acc + (s.alboomTax || 0) / 2, 0);
+
+                  return (
+                    <div className="space-y-4 font-sans">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-50 p-4 border border-slate-150 rounded-2xl text-left">
+                          <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">Faturamento Bruto</span>
+                          <span className="text-lg font-black text-slate-950 font-mono mt-0.5 block">{formatCurrency(totalGross)}</span>
+                        </div>
+                        <div className="bg-indigo-50 p-4 border border-indigo-150 rounded-2xl text-left">
+                          <span className="text-[9px] text-indigo-600 font-black uppercase tracking-wider block">Meu Desconto Alboom Pay (0,495%)</span>
+                          <span className="text-lg font-black text-indigo-800 font-mono mt-0.5 block">{formatCurrency(totalDiscount)}</span>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-150 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                              <th className="py-2.5 px-4">Data</th>
+                              <th className="py-2.5 px-4">Cliente</th>
+                              <th className="py-2.5 px-4 text-right">Valor Inicial</th>
+                              <th className="py-2.5 px-4 text-right">Comissão Cheia</th>
+                              <th className="py-2.5 px-4 text-right">Desconto Alboom Pay (0,495%)</th>
+                              <th className="py-2.5 px-4 text-right">Comissão Líquida</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-705">
+                            {myAlboomSales.map(s => {
+                              const act = activities.find(a => a.id === s.atividadeId);
+                              const rawComm = calculateCollaboratorCommission(s, currentUser, act);
+                              const discount = (s.alboomTax || 0) / 2;
+                              const netComm = Math.max(0, rawComm - discount);
+
+                              return (
+                                <tr key={s.id} className="hover:bg-slate-50/50">
+                                  <td className="py-2.5 px-4 font-mono text-slate-500">{s.dataPagamento ? formatDate(s.dataPagamento) : formatDate(s.data)}</td>
+                                  <td className="py-2.5 px-4 font-bold text-slate-900">{s.nomeCliente}</td>
+                                  <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">
+                                    {formatCurrency((s.valorTotal || 0) + (s.descontoManual || 0))}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-right font-mono text-slate-650 font-bold">{formatCurrency(rawComm)}</td>
+                                  <td className="py-2.5 px-4 text-right font-mono text-rose-700 font-bold">- {formatCurrency(discount)}</td>
+                                  <td className="py-2.5 px-4 text-right font-mono text-emerald-800 font-extrabold">{formatCurrency(netComm)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-4 border-t border-slate-150 mt-4">
+              <button
+                onClick={() => setIsAlboomModalOpen(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase px-4 py-2.5 rounded-xl transition cursor-pointer"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>,

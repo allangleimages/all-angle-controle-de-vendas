@@ -6,22 +6,24 @@ import { GestaoEquipeView } from './components/GestaoEquipeView';
 import { GestaoParceirosView } from './components/GestaoParceirosView';
 import { ConfiguracaoAtividadesView } from './components/ConfiguracaoAtividadesView';
 import { ValoresPacotesView } from './components/ValoresPacotesView';
+import { TaxasDescontosView } from './components/TaxasDescontosView';
 import { createPortal } from 'react-dom';
 
 import { 
   Menu, X, Waves, Home, BarChart3, 
   Users2, HeartHandshake, Settings2, ShieldCheck, ChevronRight, UserCircle2, Lock, ShieldAlert, KeyRound, Check,
-  Database, Copy, AlertCircle
+  Database, Copy, AlertCircle, Percent, Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StoreManager } from './store';
 
-type AllowedPages = 'home' | 'relatorios' | 'equipe' | 'parceiros' | 'atividades' | 'pacotes';
+type AllowedPages = 'home' | 'relatorios' | 'equipe' | 'parceiros' | 'atividades' | 'pacotes' | 'taxas';
 
 const NavigationMaster: React.FC = () => {
-  const { currentUser, collaborators, setCurrentUserByEmail, updateCollaborator, isAuthenticated, originalAdminEmail } = useApp();
+  const { currentUser, collaborators, setCurrentUserByEmail, updateCollaborator, isAuthenticated, originalAdminEmail, sales, activities } = useApp();
   const [activePage, setActivePage] = useState<AllowedPages>('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
 
   // Backup and system migration states
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
@@ -61,6 +63,7 @@ const NavigationMaster: React.FC = () => {
     { id: 'parceiros', label: 'GESTÃO DE PARCEIROS', icon: HeartHandshake, adminOnly: true },
     { id: 'atividades', label: 'CONFIGURAÇÃO DE ATIVIDADES', icon: Settings2, adminOnly: true },
     { id: 'pacotes', label: 'VALORES E PACOTES', icon: ShieldCheck, adminOnly: true },
+    { id: 'taxas', label: 'TAXAS E DESCONTOS', icon: Percent, adminOnly: true },
   ];
 
   // Filters visible pages depending on Active User Role
@@ -409,6 +412,133 @@ const NavigationMaster: React.FC = () => {
             </button>
           )}
 
+          {/* Notifications bell dropdown */}
+          {(() => {
+            const abandonedSalesList = sales.filter(s => s.status === 'Abandonada' || s.status === 'Pendente');
+            return (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsNotifDropdownOpen(!isNotifDropdownOpen)}
+                  className="h-10 w-10 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 transition-all cursor-pointer relative flex items-center justify-center"
+                  title="Notificações de Lançamentos Pendentes e Carrinhos Abandonados"
+                >
+                  <Bell className="w-5 h-5 text-white" />
+                  {abandonedSalesList.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white font-black text-[9px] w-5 h-5 rounded-full flex items-center justify-center border border-slate-900 animate-pulse">
+                      {abandonedSalesList.length}
+                    </span>
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {isNotifDropdownOpen && (
+                    <>
+                      {/* Dropdown background click protector */}
+                      <div className="fixed inset-0 z-40" onClick={() => setIsNotifDropdownOpen(false)} />
+                      
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 mt-2.5 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden font-sans text-slate-900"
+                      >
+                        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <Bell className="w-4 h-4 text-indigo-400" />
+                            <span className="text-xs font-black uppercase tracking-wider">Alertas de Vendas</span>
+                          </div>
+                          <span className="text-[9px] bg-rose-500/20 text-rose-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+                            {abandonedSalesList.length} Ativas
+                          </span>
+                        </div>
+
+                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                          {abandonedSalesList.length === 0 ? (
+                            <div className="p-6 text-center text-slate-400 text-xs font-bold">
+                              Nenhuma venda pendente ou carrinho abandonado. 🎉
+                            </div>
+                          ) : (
+                            abandonedSalesList.map(sale => {
+                              const collab = collaborators.find(c => c.id === sale.vendedorId);
+                              return (
+                                <div 
+                                  key={sale.id} 
+                                  className="p-3.5 hover:bg-slate-50 transition cursor-pointer text-left"
+                                  onClick={() => {
+                                    setActivePage('home');
+                                    setIsNotifDropdownOpen(false);
+                                    setTimeout(() => {
+                                      const event = new CustomEvent('open-sale-details', { detail: sale.id });
+                                      window.dispatchEvent(event);
+                                    }, 100);
+                                  }}
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <span className="text-xs font-black text-slate-950 uppercase truncate max-w-[140px]">
+                                      {sale.nomeCliente}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 font-mono">
+                                      {(() => {
+                                        if (!sale.data) return '';
+                                        const parts = sale.data.split('-');
+                                        return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : sale.data;
+                                      })()}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-bold mt-1">
+                                    Atividade: <strong className="text-slate-700">{activities.find(a => a.id === sale.atividadeId)?.nomeAtividade || 'N/A'}</strong>
+                                  </p>
+                                  <div className="flex items-center justify-between mt-2 pt-1 border-t border-dashed border-slate-100">
+                                    {sale.status === 'Pendente' ? (
+                                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wide">
+                                        Pendente
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100 uppercase tracking-wide">
+                                        Abandonada
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] font-black text-slate-900 font-mono">
+                                      R$ {sale.valorTotal.toFixed(2)}
+                                    </span>
+                                  </div>
+                                  {collab && (
+                                    <div className="mt-1.5 text-[9px] text-slate-400 font-bold uppercase flex items-center gap-1">
+                                      <span>Fotógrafo:</span>
+                                      <span className="text-slate-600 font-extrabold">{collab.nomeCompleto}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 text-center border-t border-slate-100">
+                          <button
+                            onClick={() => {
+                              setActivePage('home');
+                              setIsNotifDropdownOpen(false);
+                              setTimeout(() => {
+                                const event = new CustomEvent('filter-abandoned-sales');
+                                window.dispatchEvent(event);
+                              }, 100);
+                            }}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-black uppercase tracking-wider cursor-pointer font-sans"
+                          >
+                            Ver todos no painel principal →
+                          </button>
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })()}
+
           {/* Identity block displaying user profile styled from Team Member context */}
           <div className="relative group flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-2xl border border-white/10 cursor-pointer transition-all">
             <div className="flex items-center gap-3">
@@ -555,7 +685,7 @@ const NavigationMaster: React.FC = () => {
 
         {/* Main core layout contents panel */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-6xl mx-auto h-full">
+          <div className="max-w-[1440px] mx-auto h-full w-full px-4 sm:px-6">
             {activePage === 'home' && (
               <HomeView />
             )}
@@ -564,6 +694,7 @@ const NavigationMaster: React.FC = () => {
             {activePage === 'parceiros' && <GestaoParceirosView />}
             {activePage === 'atividades' && <ConfiguracaoAtividadesView />}
             {activePage === 'pacotes' && <ValoresPacotesView />}
+            {activePage === 'taxas' && <TaxasDescontosView />}
           </div>
         </main>
 

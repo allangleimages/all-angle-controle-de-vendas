@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Sale, Collaborator, Partner, Activity, Package } from '../types';
+import { Sale, Collaborator, Partner, Activity, Package, FeeRule } from '../types';
 import { StoreManager } from '../store';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, doc, getDocs, setDoc as fstoreSetDoc, deleteDoc } from 'firebase/firestore';
@@ -41,6 +41,7 @@ interface AppContextType {
   activities: Activity[];
   packages: Package[];
   paidCommissions: Record<string, boolean>; // key: "vendedor-id-year-month" or "partner-id-year-month"
+  feeRules: FeeRule[];
   setCurrentUserByEmail: (email: string) => void;
   
   // CRUD Sales
@@ -69,6 +70,11 @@ interface AppContextType {
   updatePackage: (id: string, updated: Partial<Package>) => void;
   archivePackage: (id: string) => void;
   deletePackage: (id: string) => void;
+
+  // CRUD FeeRules
+  addFeeRule: (rule: Omit<FeeRule, 'id'>) => void;
+  updateFeeRule: (id: string, updated: Partial<FeeRule>) => void;
+  deleteFeeRule: (id: string) => void;
 
   // Financial reconciliation toggles
   toggleRepassePaid: (key: string) => void;
@@ -104,6 +110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activities, setActivities] = useState<Activity[]>(() => StoreManager.getActivities());
   const [packages, setPackages] = useState<Package[]>(() => StoreManager.getPackages());
   const [paidCommissions, setPaidCommissions] = useState<Record<string, boolean>>(() => StoreManager.getPaidCommissions());
+  const [feeRules, setFeeRules] = useState<FeeRule[]>(() => StoreManager.getFeeRules());
 
   // Background execution for status auto-aging and Firestore sync
   useEffect(() => {
@@ -318,6 +325,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPackages(finalPackages);
         StoreManager.savePackages(finalPackages);
 
+        // 4.5. FEE RULES (Firestore-First Safe Sync)
+        const feeSnap = await getDocs(collection(db, "feeRules")).catch(err => {
+          handleFirestoreError(err, OperationType.LIST, "feeRules");
+          return null;
+        });
+        const remoteFeeRules: FeeRule[] = [];
+        if (feeSnap && !feeSnap.empty) {
+          feeSnap.forEach(docObj => {
+            const data = docObj.data();
+            if (data && data.id) remoteFeeRules.push(data as FeeRule);
+          });
+        }
+
+        let finalFeeRules: FeeRule[] = [];
+        if (remoteFeeRules.length > 0) {
+          finalFeeRules = remoteFeeRules;
+        } else {
+          finalFeeRules = StoreManager.getFeeRules();
+          for (const rule of finalFeeRules) {
+            await setDoc(doc(db, "feeRules", rule.id), rule).catch(err => {
+              handleFirestoreError(err, OperationType.WRITE, `feeRules/${rule.id}`);
+            });
+          }
+        }
+        setFeeRules(finalFeeRules);
+        StoreManager.saveFeeRules(finalFeeRules);
+
         // 5. SALES (Firestore-First Safe Sync)
         const saleSnap = await getDocs(collection(db, "sales")).catch(err => {
           handleFirestoreError(err, OperationType.LIST, "sales");
@@ -341,6 +375,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               handleFirestoreError(err, OperationType.WRITE, `sales/${s.id}`);
             });
           }
+        }
+
+        // Automatic Retroactive Audit & Recalculation (Valor Bruto = Valor Total pós-desconto)
+        let migratedCount = 0;
+        finalSales = await Promise.all(finalSales.map(async (s) => {
+          if (s.valorBruto !== s.valorTotal) {
+            migratedCount++;
+            const updatedSale = { ...s, valorBruto: s.valorTotal };
+            await setDoc(doc(db, "sales", s.id), updatedSale).catch(err => {
+              console.error(`Migration error on sale ${s.id}:`, err);
+            });
+            return updatedSale;
+          }
+          return s;
+        }));
+        if (migratedCount > 0) {
+          console.log(`Auditoria Retroativa: ${migratedCount} lançamentos auditados e recalculados com a nova lógica de faturamento.`);
         }
         finalSales.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
         setSales(finalSales);
@@ -446,6 +497,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     StoreManager.savePaidCommissions(paidCommissions);
   }, [paidCommissions]);
+
+  useEffect(() => {
+    StoreManager.saveFeeRules(feeRules);
+  }, [feeRules]);
 
   // SALES LOGICS
   const addSale = (saleData: Omit<Sale, 'id' | 'createdAt'>): Sale => {
@@ -779,6 +834,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // FEE RULES LOGICS
+  const addFeeRule = (rule: Omit<FeeRule, 'id'>) => {
+    const id = `feerule-${Math.random().toString(36).substr(2, 9)}`;
+    const newRule: FeeRule = { ...rule, id, arquivado: false };
+    setFeeRules(prev => [...prev, newRule]);
+    setDoc(doc(db, "feeRules", id), newRule).catch(err => {
+      handleFirestoreError(err, OperationType.WRITE, `feeRules/${id}`);
+    });
+  };
+
+  const updateFeeRule = (id: string, updated: Partial<FeeRule>) => {
+    setFeeRules(prev => prev.map(rule => {
+      if (rule.id === id) {
+        const merged = { ...rule, ...updated };
+        setDoc(doc(db, "feeRules", id), merged).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `feeRules/${id}`);
+        });
+        return merged;
+      }
+      return rule;
+    }));
+  };
+
+  const deleteFeeRule = (id: string) => {
+    setFeeRules(prev => prev.filter(rule => rule.id !== id));
+    deleteDoc(doc(db, "feeRules", id)).catch(err => {
+      handleFirestoreError(err, OperationType.DELETE, `feeRules/${id}`);
+    });
+  };
+
   // FORCED PUSH: Overwrite Firestore with current client local storage data
   const forcePushLocalToCloud = async () => {
     try {
@@ -833,6 +918,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       for (const pkg of packages) {
         await setDoc(doc(db, "packages", pkg.id), pkg).catch(err => {
           handleFirestoreError(err, OperationType.WRITE, `packages/${pkg.id}`);
+        });
+      }
+
+      // D.5. Fee Rules
+      const feePushSnap = await getDocs(collection(db, "feeRules"));
+      if (feePushSnap && !feePushSnap.empty) {
+        for (const docObj of feePushSnap.docs) {
+          await deleteDoc(doc(db, "feeRules", docObj.id)).catch(() => {});
+        }
+      }
+      for (const rule of feeRules) {
+        await setDoc(doc(db, "feeRules", rule.id), rule).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `feeRules/${rule.id}`);
         });
       }
 
@@ -922,6 +1020,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPackages(freshPackages);
       StoreManager.savePackages(freshPackages);
 
+      // D.5. Fee Rules
+      const feePullSnap = await getDocs(collection(db, "feeRules"));
+      const freshFeeRules: FeeRule[] = [];
+      if (feePullSnap && !feePullSnap.empty) {
+        feePullSnap.forEach(docObj => {
+          const data = docObj.data();
+          if (data && data.id) freshFeeRules.push(data as FeeRule);
+        });
+      }
+      setFeeRules(freshFeeRules);
+      StoreManager.saveFeeRules(freshFeeRules);
+
       // E. Sales
       const saleSnap = await getDocs(collection(db, "sales"));
       const freshSales: Sale[] = [];
@@ -960,7 +1070,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       console.log("Iniciando limpeza completa dos dados do sistema...");
 
-      const collectionsList = ["sales", "collaborators", "partners", "activities", "packages", "paidCommissions"];
+      const collectionsList = ["sales", "collaborators", "partners", "activities", "packages", "paidCommissions", "feeRules"];
       for (const colName of collectionsList) {
         const snap = await getDocs(collection(db, colName));
         if (snap && !snap.empty) {
@@ -975,6 +1085,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPartners([]);
       setActivities([]);
       setPackages([]);
+      setFeeRules([]);
       setPaidCommissions({});
 
       StoreManager.saveSales([]);
@@ -982,6 +1093,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       StoreManager.savePartners([]);
       StoreManager.saveActivities([]);
       StoreManager.savePackages([]);
+      StoreManager.saveFeeRules([]);
       StoreManager.savePaidCommissions({});
 
       console.log("Todos os bancos locais e remotos foram totalmente limpos!");
@@ -1005,6 +1117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activities,
       packages,
       paidCommissions,
+      feeRules,
       setCurrentUserByEmail,
       
       addSale,
@@ -1028,6 +1141,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatePackage,
       archivePackage,
       deletePackage,
+
+      addFeeRule,
+      updateFeeRule,
+      deleteFeeRule,
 
       toggleRepassePaid,
 

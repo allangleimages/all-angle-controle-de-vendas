@@ -1,16 +1,69 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from './AppContext';
 import { Sale, Package, Collaborator, Partner, Activity } from '../types';
-import { calculateCollaboratorCommission, calculatePartnerCommission } from '../utils/finance';
+import { calculateCollaboratorCommission, calculatePartnerCommission, calculateSaleTaxes } from '../utils/finance';
 import { 
   Calendar, FileText, FileSpreadsheet, DollarSign, Percent, Lock, User, Search, 
   TrendingUp, Trophy, Sparkles, Users, AlertTriangle, CheckCircle2,
   Printer, Clock
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { StoreManager } from '../store';
+
+const getSaleGross = (sale: any) => {
+  return sale.valorTotal || 0;
+};
+
+const getSaleInitialValue = (sale: any) => {
+  return (sale.valorTotal || 0) + (sale.descontoManual || 0);
+};
+
+const getSalePackagesString = (sale: any) => {
+  if (!sale.sacolaItens || sale.sacolaItens.length === 0) return 'N/A';
+  return sale.sacolaItens.map((item: any) => item.nome).join(' + ');
+};
+
+const getSalePaymentFormasString = (sale: any) => {
+  const rules = StoreManager.getFeeRules();
+  if (sale.pagamentos && sale.pagamentos.length > 0) {
+    return sale.pagamentos.map((p: any) => {
+      if (p.taxaId) {
+        const r = rules.find(x => x.id === p.taxaId);
+        if (r) return `${p.forma} (${r.nome})`;
+      }
+      if (p.alboomPay) {
+        return `${p.forma} (Alboom Pay)`;
+      }
+      return p.forma;
+    }).join(' + ');
+  }
+  
+  const baseForma = sale.formaPagamento || 'PIX';
+  if (sale.taxaId) {
+    const r = rules.find(x => x.id === sale.taxaId);
+    if (r) return `${baseForma} (${r.nome})`;
+  }
+  if (sale.alboomTax > 0 || sale.alboomPay) {
+    return `${baseForma} (Alboom Pay)`;
+  }
+  return baseForma;
+};
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const cleanDate = dateStr.replace(/\//g, '-');
+  const parts = cleanDate.split('-');
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return `${parts[0]}/${parts[1]}/${parts[2]}`;
+  }
+  return dateStr;
+};
 
 export const RelatoriosView: React.FC = () => {
-  const { currentUser, sales, collaborators, partners, activities, packages } = useApp();
+  const { currentUser, sales, collaborators, partners, activities, packages, feeRules } = useApp();
 
   const handleExportPDF = () => {
     if (filteredSales.length === 0) {
@@ -18,8 +71,8 @@ export const RelatoriosView: React.FC = () => {
       return;
     }
     
-    // Create new PDF doc in portrait, millimeter, A4 size
-    const doc = new jsPDF('p', 'mm', 'a4');
+    // Create new PDF doc in landscape, millimeter, A4 size
+    const doc = new jsPDF('l', 'mm', 'a4');
     
     // Filter definitions
     const period = `Competência de Análise: ${currentPeriodText}`;
@@ -36,9 +89,9 @@ export const RelatoriosView: React.FC = () => {
     const marginX = 15;
     let posY = 15;
     
-    // 1. Header Box
+    // 1. Header Box (Width 267)
     doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(marginX, posY, 180, 26, 'F');
+    doc.rect(marginX, posY, 267, 26, 'F');
     
     doc.setTextColor(255, 255, 255);
     doc.setFont("Helvetica", "bold");
@@ -54,10 +107,10 @@ export const RelatoriosView: React.FC = () => {
     
     posY += 32;
     
-    // 2. Filter Information Box
+    // 2. Filter Information Box (Width 267)
     doc.setFillColor(248, 250, 252); // soft off-white background
     doc.setDrawColor(226, 232, 240); // light gray border
-    doc.rect(marginX, posY, 180, 16, 'FD');
+    doc.rect(marginX, posY, 267, 16, 'FD');
     
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFont("Helvetica", "bold");
@@ -82,7 +135,7 @@ export const RelatoriosView: React.FC = () => {
     const drawRow = (label: string, value: string, isTotal: boolean = false) => {
       if (isTotal) {
         doc.setFillColor(243, 244, 246);
-        doc.rect(marginX, posY - 4, 180, 8, 'F');
+        doc.rect(marginX, posY - 4, 267, 8, 'F');
       }
       
       doc.setFont("Helvetica", isTotal ? "bold" : "normal");
@@ -92,18 +145,38 @@ export const RelatoriosView: React.FC = () => {
       
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(isTotal ? accentGreen[0] : darkText[0], isTotal ? accentGreen[1] : darkText[1], isTotal ? accentGreen[2] : darkText[2]);
-      doc.text(value, marginX + 176, posY + 1, { align: 'right' });
+      doc.text(value, marginX + 263, posY + 1, { align: 'right' });
       
       doc.setDrawColor(241, 245, 249);
-      doc.line(marginX, posY + 4, marginX + 180, posY + 4);
+      doc.line(marginX, posY + 4, marginX + 267, posY + 4);
       posY += 8;
     };
     
     // Strictly matching client's labels and design choices
-    drawRow("(=) Valor bruto:", `R$ ${financialTotals.grossRevenue.toFixed(2)}`);
+    drawRow("(=) Valor total arrecadado:", `R$ ${financialTotals.grossRevenue.toFixed(2)}`);
+    if (financialTotals.totalDescontoAplicado > 0) {
+      drawRow("(-) Desconto (Manual/Comercial):", `- R$ ${financialTotals.totalDescontoAplicado.toFixed(2)}`);
+    }
     drawRow("(-) Repasse de Comissão (Equipe All Angle):", `- R$ ${financialTotals.totalTeamCommissions.toFixed(2)}`);
     drawRow("(-) Repasse de comissão (Parceiros e indicações):", `- R$ ${financialTotals.totalPartnerCommissions.toFixed(2)}`);
+    drawRow("(-) Valor Descontado Taxa Alboom Pay:", `- R$ ${financialTotals.totalAlboomTax.toFixed(2)}`);
     drawRow("(=) Saldo Líquido Final para ALL ANGLE:", `R$ ${financialTotals.netRevenue.toFixed(2)}`, true);
+    
+    if (financialTotals.totalFixedReportFees > 0) {
+      posY += 6;
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+      doc.text("DESPESAS FIXAS DE RELATÓRIO", marginX, posY);
+      posY += 5;
+
+      feeRules.filter(r => !r.arquivado && r.exibirApenasConsolidado).forEach(rule => {
+        if (rule.valorConsolidadoRelatorio && rule.valorConsolidadoRelatorio > 0) {
+          drawRow(`• ${rule.nome}:`, `R$ ${rule.valorConsolidadoRelatorio.toFixed(2)}`);
+        }
+      });
+      drawRow("Total Despesas Fixas:", `R$ ${financialTotals.totalFixedReportFees.toFixed(2)}`, true);
+    }
     
     posY += 8;
     
@@ -115,64 +188,109 @@ export const RelatoriosView: React.FC = () => {
     
     posY += 5;
     
-    // Table Header
+    // Table Header (Width 267)
     doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(marginX, posY - 4, 180, 7, 'F');
+    doc.rect(marginX, posY - 4, 267, 7, 'F');
     
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.5);
     doc.setTextColor(255, 255, 255);
-    doc.text("DATA", marginX + 4, posY + 0.5);
-    doc.text("CLIENTE", marginX + 22, posY + 0.5);
-    doc.text("ATIVIDADE", marginX + 80, posY + 0.5);
-    doc.text("FOTÓGRAFO", marginX + 120, posY + 0.5);
-    doc.text("VALOR TOTAL", marginX + 176, posY + 0.5, { align: 'right' });
+    doc.text("DATA", marginX + 2, posY + 0.5);
+    doc.text("CLIENTE", marginX + 14, posY + 0.5);
+    doc.text("PESSOAS", marginX + 38, posY + 0.5);
+    doc.text("HOSPEDAGEM", marginX + 46, posY + 0.5);
+    doc.text("ATIVIDADE", marginX + 64, posY + 0.5);
+    doc.text("FOTÓGRAFO", marginX + 82, posY + 0.5);
+    doc.text("PACOTE DE VENDAS", marginX + 100, posY + 0.5);
+    doc.text("ENVIADAS", marginX + 132, posY + 0.5);
+    doc.text("VENDIDAS", marginX + 144, posY + 0.5);
+    doc.text("BRUTO", marginX + 174, posY + 0.5, { align: 'right' });
+    doc.text("DESCONTO", marginX + 192, posY + 0.5, { align: 'right' });
+    doc.text("TOTAL", marginX + 210, posY + 0.5, { align: 'right' });
+    doc.text("PAGAMENTO", marginX + 212, posY + 0.5);
+    doc.text("STATUS", marginX + 250, posY + 0.5);
     
     posY += 7;
     
     doc.setFont("Helvetica", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     
     filteredSales.forEach((sale) => {
-      // Automatic page break handling
-      if (posY > 275) {
+      // Automatic page break handling in Landscape
+      if (posY > 185) {
         doc.addPage();
         posY = 20;
         
         doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.rect(marginX, posY - 4, 180, 7, 'F');
+        doc.rect(marginX, posY - 4, 267, 7, 'F');
         
         doc.setFont("Helvetica", "bold");
-        doc.setFontSize(7.5);
+        doc.setFontSize(6.5);
         doc.setTextColor(255, 255, 255);
-        doc.text("DATA", marginX + 4, posY + 0.5);
-        doc.text("CLIENTE", marginX + 22, posY + 0.5);
-        doc.text("ATIVIDADE", marginX + 80, posY + 0.5);
-        doc.text("FOTÓGRAFO", marginX + 120, posY + 0.5);
-        doc.text("VALOR TOTAL", marginX + 176, posY + 0.5, { align: 'right' });
+        doc.text("DATA", marginX + 2, posY + 0.5);
+        doc.text("CLIENTE", marginX + 14, posY + 0.5);
+        doc.text("PESSOAS", marginX + 38, posY + 0.5);
+        doc.text("HOSPEDAGEM", marginX + 46, posY + 0.5);
+        doc.text("ATIVIDADE", marginX + 64, posY + 0.5);
+        doc.text("FOTÓGRAFO", marginX + 82, posY + 0.5);
+        doc.text("PACOTE DE VENDAS", marginX + 100, posY + 0.5);
+        doc.text("ENVIADAS", marginX + 132, posY + 0.5);
+        doc.text("VENDIDAS", marginX + 144, posY + 0.5);
+        doc.text("BRUTO", marginX + 174, posY + 0.5, { align: 'right' });
+        doc.text("DESCONTO", marginX + 192, posY + 0.5, { align: 'right' });
+        doc.text("TOTAL", marginX + 210, posY + 0.5, { align: 'right' });
+        doc.text("PAGAMENTO", marginX + 212, posY + 0.5);
+        doc.text("STATUS", marginX + 250, posY + 0.5);
         
         posY += 7;
         doc.setFont("Helvetica", "normal");
-        doc.setFontSize(7);
+        doc.setFontSize(6.5);
         doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       }
       
       const act = activities.find(a => a.id === sale.atividadeId);
       const collab = collaborators.find(c => c.id === sale.vendedorId);
       
-      const maxLen = 33;
       const clientName = (sale.nomeCliente || '').toUpperCase();
-      const clientTruncated = clientName.length > maxLen ? clientName.substring(0, maxLen) + "..." : clientName;
+      const clientTruncated = clientName.length > 18 ? clientName.substring(0, 16) + "..." : clientName;
       
-      doc.text(sale.data || '', marginX + 4, posY + 0.5);
-      doc.text(clientTruncated, marginX + 22, posY + 0.5);
-      doc.text((act?.nomeAtividade || 'N/A').toUpperCase(), marginX + 80, posY + 0.5);
-      doc.text((collab?.nomeCompleto || 'N/A').toUpperCase(), marginX + 120, posY + 0.5);
-      doc.text(`R$ ${sale.valorTotal.toFixed(2)}`, marginX + 176, posY + 0.5, { align: 'right' });
+      const hotelClean = (sale.hospedagem || '').toUpperCase();
+      const hotelTruncated = hotelClean.length > 12 ? hotelClean.substring(0, 10) + "..." : hotelClean;
+
+      const actName = (act?.nomeAtividade || 'N/A').toUpperCase();
+      const actTruncated = actName.length > 12 ? actName.substring(0, 10) + "..." : actName;
+
+      const collabName = (collab?.nomeCompleto || 'N/A').toUpperCase();
+      const collabTruncated = collabName.length > 12 ? collabName.substring(0, 10) + "..." : collabName;
+
+      const packagesStr = getSalePackagesString(sale).toUpperCase();
+      const packagesTruncated = packagesStr.length > 20 ? packagesStr.substring(0, 18) + "..." : packagesStr;
+
+      const grossValue = getSaleGross(sale);
+      const discountValue = sale.descontoManual || 0;
+      const totalValue = sale.valorTotal || 0;
+
+      const paymentStr = getSalePaymentFormasString(sale).toUpperCase();
+      const paymentTruncated = paymentStr.length > 22 ? paymentStr.substring(0, 20) + "..." : paymentStr;
+
+      doc.text(sale.data || '', marginX + 2, posY + 0.5);
+      doc.text(clientTruncated, marginX + 14, posY + 0.5);
+      doc.text(String(sale.pessoas || 1), marginX + 38, posY + 0.5);
+      doc.text(hotelTruncated, marginX + 46, posY + 0.5);
+      doc.text(actTruncated, marginX + 64, posY + 0.5);
+      doc.text(collabTruncated, marginX + 82, posY + 0.5);
+      doc.text(packagesTruncated, marginX + 100, posY + 0.5);
+      doc.text(String(sale.fotosEnviadas || 0), marginX + 132, posY + 0.5);
+      doc.text(String(sale.fotosVendidas || 0), marginX + 144, posY + 0.5);
+      doc.text(`R$ ${grossValue.toFixed(2)}`, marginX + 174, posY + 0.5, { align: 'right' });
+      doc.text(`R$ ${discountValue.toFixed(2)}`, marginX + 192, posY + 0.5, { align: 'right' });
+      doc.text(`R$ ${totalValue.toFixed(2)}`, marginX + 210, posY + 0.5, { align: 'right' });
+      doc.text(paymentTruncated, marginX + 212, posY + 0.5);
+      doc.text((sale.status || '').toUpperCase(), marginX + 250, posY + 0.5);
       
       doc.setDrawColor(241, 245, 249);
-      doc.line(marginX, posY + 3.5, marginX + 180, posY + 3.5);
+      doc.line(marginX, posY + 3.5, marginX + 267, posY + 3.5);
       posY += 6.5;
     });
     
@@ -269,8 +387,7 @@ export const RelatoriosView: React.FC = () => {
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
     doc.text("DATA", marginX + 4, posY + 0.5);
-    doc.text("CÓDIGO INTERNO DO LANÇAMENTO", marginX + 22, posY + 0.5);
-    doc.text("CLIENTE ATENDIDO", marginX + 75, posY + 0.5);
+    doc.text("CLIENTE ATENDIDO", marginX + 25, posY + 0.5);
     doc.text("VALOR DA COMISSÃO", marginX + 176, posY + 0.5, { align: 'right' });
     
     posY += 7;
@@ -282,7 +399,9 @@ export const RelatoriosView: React.FC = () => {
     const validEntries = entries.filter(e => e.comissao > 0);
     
     validEntries.forEach((entry) => {
-      if (posY > 275) {
+      const entryHeight = entry.alboomDiscount > 0 ? 9.5 : 6.5;
+      
+      if (posY + entryHeight > 275) {
         doc.addPage();
         posY = 20;
         doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -292,8 +411,7 @@ export const RelatoriosView: React.FC = () => {
         doc.setFontSize(7.5);
         doc.setTextColor(255, 255, 255);
         doc.text("DATA", marginX + 4, posY + 0.5);
-        doc.text("CÓDIGO INTERNO DO LANÇAMENTO", marginX + 22, posY + 0.5);
-        doc.text("CLIENTE ATENDIDO", marginX + 75, posY + 0.5);
+        doc.text("CLIENTE ATENDIDO", marginX + 25, posY + 0.5);
         doc.text("VALOR DA COMISSÃO", marginX + 176, posY + 0.5, { align: 'right' });
         
         posY += 7;
@@ -302,18 +420,27 @@ export const RelatoriosView: React.FC = () => {
         doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       }
       
-      const codeStr = (entry.rawId || entry.id).toUpperCase();
       const clientStr = entry.cliente.toUpperCase();
-      const trunClient = clientStr.length > 40 ? clientStr.substring(0, 40) + "..." : clientStr;
+      const trunClient = clientStr.length > 75 ? clientStr.substring(0, 72) + "..." : clientStr;
       
       doc.text(entry.data || '', marginX + 4, posY + 0.5);
-      doc.text(codeStr, marginX + 22, posY + 0.5);
-      doc.text(trunClient, marginX + 75, posY + 0.5);
+      doc.text(trunClient, marginX + 25, posY + 0.5);
+      
+      if (entry.alboomDiscount > 0) {
+        doc.setFont("Helvetica", "italic");
+        doc.setFontSize(5.5);
+        doc.setTextColor(99, 102, 241); // indigo text
+        doc.text(`[Comissao Cheia: R$ ${entry.rawComissao.toFixed(2)}] | [Desc. Alboom Pay: -R$ ${entry.alboomDiscount.toFixed(2)}] | [Real: R$ ${entry.comissao.toFixed(2)}]`, marginX + 25, posY + 3.0);
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+      }
+      
       doc.text(`R$ ${entry.comissao.toFixed(2)}`, marginX + 176, posY + 0.5, { align: 'right' });
       
       doc.setDrawColor(241, 245, 249);
-      doc.line(marginX, posY + 3.5, marginX + 180, posY + 3.5);
-      posY += 6.5;
+      doc.line(marginX, posY + (entryHeight - 3.0), marginX + 180, posY + (entryHeight - 3.0));
+      posY += entryHeight;
     });
     
     doc.save(`repasse_individual_${collab.nomeCompleto.toLowerCase().replace(/\s+/g, '_')}_${selectedYear}_${isAnnualView ? 'anual' : selectedMonth}.pdf`);
@@ -407,8 +534,7 @@ export const RelatoriosView: React.FC = () => {
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
     doc.text("DATA", marginX + 4, posY + 0.5);
-    doc.text("CÓDIGO INTERNO", marginX + 22, posY + 0.5);
-    doc.text("CLIENTE ATENDIDO", marginX + 75, posY + 0.5);
+    doc.text("CLIENTE ATENDIDO", marginX + 25, posY + 0.5);
     doc.text("VALOR DO REPASSE", marginX + 176, posY + 0.5, { align: 'right' });
     
     posY += 7;
@@ -430,8 +556,7 @@ export const RelatoriosView: React.FC = () => {
         doc.setFontSize(7.5);
         doc.setTextColor(255, 255, 255);
         doc.text("DATA", marginX + 4, posY + 0.5);
-        doc.text("CÓDIGO INTERNO", marginX + 22, posY + 0.5);
-        doc.text("CLIENTE ATENDIDO", marginX + 75, posY + 0.5);
+        doc.text("CLIENTE ATENDIDO", marginX + 25, posY + 0.5);
         doc.text("VALOR DO REPASSE", marginX + 176, posY + 0.5, { align: 'right' });
         
         posY += 7;
@@ -440,13 +565,11 @@ export const RelatoriosView: React.FC = () => {
         doc.setTextColor(darkText[0], darkText[1], darkText[2]);
       }
       
-      const codeStr = (entry.rawId || entry.id).toUpperCase();
       const clientStr = entry.cliente.toUpperCase();
-      const trunClient = clientStr.length > 40 ? clientStr.substring(0, 40) + "..." : clientStr;
+      const trunClient = clientStr.length > 75 ? clientStr.substring(0, 72) + "..." : clientStr;
       
       doc.text(entry.data || '', marginX + 4, posY + 0.5);
-      doc.text(codeStr, marginX + 22, posY + 0.5);
-      doc.text(trunClient, marginX + 75, posY + 0.5);
+      doc.text(trunClient, marginX + 25, posY + 0.5);
       doc.text(`R$ ${entry.comissao.toFixed(2)}`, marginX + 176, posY + 0.5, { align: 'right' });
       
       doc.setDrawColor(241, 245, 249);
@@ -483,30 +606,45 @@ export const RelatoriosView: React.FC = () => {
     csvContent += 'DEMONSTRATIVO FINANCEIRO CONSOLIDADO\r\n';
     csvContent += `Métrica;Valor Confirmado (R$)\r\n`;
     csvContent += `(=) Valor bruto:;${financialTotals.grossRevenue.toFixed(2).replace('.', ',')}\r\n`;
+    if (financialTotals.totalDescontoAplicado > 0) {
+      csvContent += `(-) Desconto (Manual/Comercial):;${financialTotals.totalDescontoAplicado.toFixed(2).replace('.', ',')}\r\n`;
+    }
     csvContent += `(-) Repasse de Comissão (Equipe All Angle):;${financialTotals.totalTeamCommissions.toFixed(2).replace('.', ',')}\r\n`;
     csvContent += `(-) Repasse de comissão (Parceiros e indicações):;${financialTotals.totalPartnerCommissions.toFixed(2).replace('.', ',')}\r\n`;
+    csvContent += `(-) Valores Descontados por Venda:;${financialTotals.totalAlboomTax.toFixed(2).replace('.', ',')}\r\n`;
     csvContent += `(=) Saldo Líquido Final para ALL ANGLE:;${financialTotals.netRevenue.toFixed(2).replace('.', ',')}\r\n\r\n`;
+
+    if (financialTotals.totalFixedReportFees > 0) {
+      csvContent += 'DESPESAS FIXAS DE RELATÓRIO\r\n';
+      csvContent += 'Métrica;Valor (R$)\r\n';
+      feeRules.filter(r => !r.arquivado && r.exibirApenasConsolidado).forEach(rule => {
+        if (rule.valorConsolidadoRelatorio && rule.valorConsolidadoRelatorio > 0) {
+          csvContent += `• ${rule.nome};${rule.valorConsolidadoRelatorio.toFixed(2).replace('.', ',')}\r\n`;
+        }
+      });
+      csvContent += `Total Despesas Fixas:;${financialTotals.totalFixedReportFees.toFixed(2).replace('.', ',')}\r\n\r\n`;
+    }
 
     // Transaction List Summary (respecting filters)
     csvContent += 'LISTA DE LANÇAMENTOS COMERCIAIS DETALHADOS\r\n';
-    csvContent += 'Data;Cliente;Código Faturamento;Atividade;Fotógrafo;Parceiro;Hospedagem;Fotos Enviadas;Fotos Vendidas;Forma de Pagamento;Valor Bruto (R$);Status\r\n';
+    csvContent += 'Data;Cliente;Número de Pessoas;Hospedagem;Atividade;Fotógrafo;Pacote de Vendas;Fotos Enviadas;Fotos Vendidas;Valor Inicial (R$);Desconto (R$);Valor Total (R$);Forma de Pagamento;Status\r\n';
 
     filteredSales.forEach(sale => {
       const activityObj = activities.find(a => a.id === sale.atividadeId);
       const collab = collaborators.find(c => c.id === sale.vendedorId);
-      const partner = partners.find(p => p.id === sale.parceiroId);
       
-      const isPaid = sale.status === 'Pago';
-      const grossVal = isPaid ? sale.valorTotal : 0;
-      const photosSold = isPaid ? getPhotosSoldInSale(sale, packages) : 0;
-
       const clientClean = (sale.nomeCliente || '').replace(/;/g, ',');
       const hotelClean = (sale.hospedagem || '').replace(/;/g, ',');
       const actName = activityObj ? activityObj.nomeAtividade.replace(/;/g, ',') : 'N/A';
       const collabName = collab ? collab.nomeCompleto.replace(/;/g, ',') : 'N/A';
-      const partnerName = partner ? partner.nomeParceiro.replace(/;/g, ',') : 'N/A';
       
-      csvContent += `${sale.data};${clientClean};${sale.id};${actName};${collabName};${partnerName};${hotelClean};${sale.fotosEnviadas};${photosSold};${sale.formaPagamento || 'PIX'};${grossVal.toFixed(2).replace('.', ',')};${sale.status}\r\n`;
+      const packagesStr = getSalePackagesString(sale).replace(/;/g, ',');
+      const initialVal = getSaleInitialValue(sale);
+      const discountVal = sale.descontoManual || 0;
+      const totalVal = sale.valorTotal || 0;
+      const paymentStr = getSalePaymentFormasString(sale).replace(/;/g, ',');
+      
+      csvContent += `${sale.data};${clientClean};${sale.pessoas || 1};${hotelClean};${actName};${collabName};${packagesStr};${sale.fotosEnviadas || 0};${sale.fotosVendidas || 0};${initialVal.toFixed(2).replace('.', ',')};${discountVal.toFixed(2).replace('.', ',')};${totalVal.toFixed(2).replace('.', ',')};${paymentStr};${sale.status}\r\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -530,9 +668,9 @@ export const RelatoriosView: React.FC = () => {
     csvContent += `Competência:;${isAnnualView ? `Ano de ${selectedYear}` : `${months[selectedMonth - 1]} de ${selectedYear}`}\r\n`;
     csvContent += `Total de Comissão a Pagar:;R$ ${totalToPay.toFixed(2).replace('.', ',')}\r\n\r\n`;
 
-    csvContent += `Data;Código;Cliente;Valor da Venda (R$);Valor da Comissão (R$)\r\n`;
+    csvContent += `Data;Cliente;Valor da Venda (R$);Comissão Cheia (R$);Desconto Alboom Pay (R$);Comissão Líquida Recebida (R$)\r\n`;
     entries.forEach(entry => {
-      csvContent += `${entry.data};${entry.rawId};${entry.cliente};${entry.valorVenda.toFixed(2).replace('.', ',')};${entry.comissao.toFixed(2).replace('.', ',')}\r\n`;
+      csvContent += `${entry.data};${entry.cliente};${entry.valorVenda.toFixed(2).replace('.', ',')};${entry.rawComissao.toFixed(2).replace('.', ',')};${entry.alboomDiscount.toFixed(2).replace('.', ',')};${entry.comissao.toFixed(2).replace('.', ',')}\r\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -556,9 +694,9 @@ export const RelatoriosView: React.FC = () => {
     csvContent += `Competência:;${isAnnualView ? `Ano de ${selectedYear}` : `${months[selectedMonth - 1]} de ${selectedYear}`}\r\n`;
     csvContent += `Total de Repasse:;R$ ${totalToPay.toFixed(2).replace('.', ',')}\r\n\r\n`;
 
-    csvContent += `Data;Código;Cliente;Valor da Venda (R$);Comissão (R$)\r\n`;
+    csvContent += `Data;Cliente;Valor da Venda (R$);Comissão (R$)\r\n`;
     entries.forEach(entry => {
-      csvContent += `${entry.data};${entry.rawId};${entry.cliente};${entry.valorVenda.toFixed(2).replace('.', ',')};${entry.comissao.toFixed(2).replace('.', ',')}\r\n`;
+      csvContent += `${entry.data};${entry.cliente};${entry.valorVenda.toFixed(2).replace('.', ',')};${entry.comissao.toFixed(2).replace('.', ',')}\r\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -574,7 +712,7 @@ export const RelatoriosView: React.FC = () => {
   // PRIVACY RULE: This page is now viewable by both administrators and team members with partitioned logic.
   const isAuthorized = true;
 
-  const [activeTab, setActiveTab] = useState<'financas' | 'vendas' | 'destaques' | 'comissao_equipe' | 'comissao_parceiros' | 'insights'>(
+  const [activeTab, setActiveTab] = useState<'financas' | 'vendas' | 'destaques' | 'comissao_equipe' | 'comissao_parceiros' | 'alboom_pay' | 'insights'>(
     currentUser.cargo === 'Admin' ? 'financas' : 'vendas'
   );
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
@@ -582,6 +720,11 @@ export const RelatoriosView: React.FC = () => {
   const [isAnnualView, setIsAnnualView] = useState<boolean>(false);
   const [selectedActivityId, setSelectedActivityId] = useState<string>('all');
   const [selectedVendedorId, setSelectedVendedorId] = useState<string>('all');
+  const [useCustomDateRange, setUseCustomDateRange] = useState<boolean>(false);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('all');
+  const [selectedTaxId, setSelectedTaxId] = useState<string>('all');
   
   // Tab 4 & 5 (Comissão Equipe & Parceiros) states
   const [tab4SelectedCollabId, setTab4SelectedCollabId] = useState<string>(
@@ -641,7 +784,7 @@ export const RelatoriosView: React.FC = () => {
       });
 
       const paidMonthSales = monthSales.filter(s => s.status === 'Pago');
-      const grossRevenue = paidMonthSales.reduce((acc, s) => acc + s.valorTotal, 0);
+      const grossRevenue = paidMonthSales.reduce((acc, s) => acc + getSaleGross(s), 0);
       const volume = paidMonthSales.length;
 
       let totalComms = 0;
@@ -650,7 +793,9 @@ export const RelatoriosView: React.FC = () => {
         const partner = partners.find(p => p.id === s.parceiroId);
         const act = activities.find(a => a.id === s.atividadeId);
         
-        const collabComm = Number(calculateCollaboratorCommission(s, collab, act));
+        const rawCollabComm = Number(calculateCollaboratorCommission(s, collab, act));
+        const taxes = calculateSaleTaxes(s, feeRules);
+        const collabComm = Math.max(0, rawCollabComm - taxes.teamTax);
         const partComm = Number(calculatePartnerCommission(s, partner, act));
         totalComms += (collabComm + partComm);
       });
@@ -685,19 +830,25 @@ export const RelatoriosView: React.FC = () => {
     return sorted[0]?.grossRevenue > 0 ? sorted[0] : null;
   }, [monthlyPerformance]);
 
-  // Combined transactions based on period configurations (Visão Anual vs specific month)
+  // Combined transactions based on period configurations (Visão Anual vs specific month vs custom date range)
   const filteredSales = useMemo(() => {
     const isUserAdmin = currentUser.cargo === 'Admin';
     return sales.filter(sale => {
       if (sale.status === 'Archived') return false;
+      if (sale.status === 'Pendente') return false;
 
-      const dateParts = sale.data.split('-');
-      if (dateParts.length < 3) return false;
-      const yr = parseInt(dateParts[0], 10);
-      const mo = parseInt(dateParts[1], 10);
+      // Date Filtering
+      if (useCustomDateRange && startDate && endDate) {
+        if (sale.data < startDate || sale.data > endDate) return false;
+      } else {
+        const dateParts = sale.data.split('-');
+        if (dateParts.length < 3) return false;
+        const yr = parseInt(dateParts[0], 10);
+        const mo = parseInt(dateParts[1], 10);
 
-      if (yr !== selectedYear) return false;
-      if (!isAnnualView && mo !== selectedMonth) return false;
+        if (yr !== selectedYear) return false;
+        if (!isAnnualView && mo !== selectedMonth) return false;
+      }
 
       // Privacy restriction for non-administrators
       if (!isUserAdmin && sale.vendedorId !== currentUser.id) return false;
@@ -708,9 +859,26 @@ export const RelatoriosView: React.FC = () => {
       // Team filter
       if (selectedVendedorId !== 'all' && sale.vendedorId !== selectedVendedorId) return false;
 
+      // NEW FILTER: Forma de Pagamento
+      if (selectedPaymentMethod !== 'all') {
+        const hasPaymentMethod = sale.pagamentos && sale.pagamentos.some(p => p.forma === selectedPaymentMethod);
+        if (!hasPaymentMethod) return false;
+      }
+
+      // NEW FILTER: Taxas e Descontos
+      if (selectedTaxId !== 'all') {
+        const hasTax = sale.pagamentos && sale.pagamentos.some(p => {
+          if (selectedTaxId === 'alboom-pay-default') {
+            return p.taxaId === 'alboom-pay-default' || p.alboomPay;
+          }
+          return p.taxaId === selectedTaxId;
+        });
+        if (!hasTax) return false;
+      }
+
       return true;
     });
-  }, [sales, selectedYear, selectedMonth, isAnnualView, selectedActivityId, selectedVendedorId, currentUser]);
+  }, [sales, selectedYear, selectedMonth, isAnnualView, selectedActivityId, selectedVendedorId, currentUser, useCustomDateRange, startDate, endDate, selectedPaymentMethod, selectedTaxId]);
 
   // Paid sales under selections
   const paidSales = useMemo(() => {
@@ -763,9 +931,14 @@ export const RelatoriosView: React.FC = () => {
     let totalPartnerCommissions = 0;
     let totalSubtotalOriginal = 0;
     let totalDescontoAplicado = 0;
+    let totalAlboomTax = 0;
+    const taxBreakdown: { [name: string]: number } = {};
 
     paidSales.forEach(sale => {
-      grossRevenue += sale.valorTotal;
+      const taxes = calculateSaleTaxes(sale, feeRules);
+      totalAlboomTax += taxes.totalTax;
+      grossRevenue += getSaleGross(sale);
+      
       const discount = sale.descontoManual || 0;
       totalDescontoAplicado += discount;
 
@@ -778,26 +951,56 @@ export const RelatoriosView: React.FC = () => {
       const partner = partners.find(p => p.id === sale.parceiroId);
       const act = activities.find(a => a.id === sale.atividadeId);
 
-      const vComm = Number(calculateCollaboratorCommission(sale, collab, act));
+      const rawVComm = Number(calculateCollaboratorCommission(sale, collab, act));
+      const vComm = Math.max(0, rawVComm - taxes.teamTax);
       const pComm = Number(calculatePartnerCommission(sale, partner, act));
 
       totalTeamCommissions += vComm;
       totalPartnerCommissions += pComm;
+
+      // Group tax breakdown by rule name
+      if (sale.pagamentos && sale.pagamentos.length > 0) {
+        sale.pagamentos.forEach(p => {
+          const tId = p.taxaId || (p.alboomPay ? 'alboom-pay-default' : '');
+          if (tId) {
+            const rule = tId === 'alboom-pay-default' ? { nome: 'Alboom Pay', arquivado: false } : feeRules.find(r => r.id === tId);
+            if (rule && !rule.arquivado) {
+              const res = calculateSaleTaxes({ ...sale, pagamentos: [p] }, feeRules);
+              taxBreakdown[rule.nome] = (taxBreakdown[rule.nome] || 0) + res.totalTax;
+            }
+          }
+        });
+      } else {
+        const tId = sale.taxaId || (sale.alboomTax ? 'alboom-pay-default' : '');
+        if (tId) {
+          const rule = tId === 'alboom-pay-default' ? { nome: 'Alboom Pay', arquivado: false } : feeRules.find(r => r.id === tId);
+          if (rule && !rule.arquivado) {
+            taxBreakdown[rule.nome] = (taxBreakdown[rule.nome] || 0) + taxes.totalTax;
+          }
+        }
+      }
     });
 
+    const totalFixedReportFees = feeRules
+      .filter(r => !r.arquivado && r.exibirApenasConsolidado)
+      .reduce((acc, r) => acc + (r.valorConsolidadoRelatorio || 0), 0);
+
     const totalCommissions = totalTeamCommissions + totalPartnerCommissions;
-    const netRevenue = grossRevenue - totalCommissions;
+    const netRevenue = grossRevenue - totalCommissions - totalAlboomTax;
 
     return {
       grossRevenue,
       totalCommissions,
       totalTeamCommissions,
       totalPartnerCommissions,
+      totalAlboomTax,
+      totalFixedReportFees,
       netRevenue,
       totalSubtotalOriginal,
-      totalDescontoAplicado
+      totalDescontoAplicado: 0,
+      taxBreakdown
     };
-  }, [paidSales, filteredSales, collaborators, partners, activities]);
+  }, [paidSales, filteredSales, collaborators, partners, activities, feeRules]);
 
   // =========================================================
   // SUB-TAB 2 METRICS: VENDAS E CONVERSÃO
@@ -937,26 +1140,35 @@ export const RelatoriosView: React.FC = () => {
     const entries = paidSales
       .map(sale => {
         const act = activities.find(a => a.id === sale.atividadeId);
-        const commissionAmt = Number(calculateCollaboratorCommission(sale, collab, act));
+        const rawCommission = Number(calculateCollaboratorCommission(sale, collab, act));
+        const taxes = calculateSaleTaxes(sale, feeRules);
+        const alboomDiscount = taxes.teamTax;
+        const commissionAmt = Math.max(0, rawCommission - alboomDiscount);
         const pct = sale.valorTotal > 0 ? (commissionAmt / sale.valorTotal) * 100 : 0;
         return {
           id: sale.id.substring(0, 8).toUpperCase(),
           rawId: sale.id,
-          data: sale.data,
+          data: formatDate(sale.data),
           cliente: sale.nomeCliente,
           valorVenda: sale.valorTotal,
+          rawComissao: rawCommission,
+          alboomDiscount,
           comissao: commissionAmt,
           percentage: pct
         };
       })
-      .filter(entry => entry.comissao > 0); // Hide entries totaling R$ 0.00
+      .filter(entry => entry.rawComissao > 0); // Hide entries totaling R$ 0.00
 
     const totalToPay = entries.reduce((acc, entry) => acc + entry.comissao, 0);
+    const totalRawCommission = entries.reduce((acc, entry) => acc + entry.rawComissao, 0);
+    const totalAlboomDiscount = entries.reduce((acc, entry) => acc + entry.alboomDiscount, 0);
 
     return {
       collab,
       entries,
-      totalToPay
+      totalToPay,
+      totalRawCommission,
+      totalAlboomDiscount
     };
   }, [tab4SelectedCollabId, paidSales, collaborators, activities]);
 
@@ -973,7 +1185,7 @@ export const RelatoriosView: React.FC = () => {
         return {
           id: sale.id.substring(0, 8).toUpperCase(),
           rawId: sale.id,
-          data: sale.data,
+          data: formatDate(sale.data),
           cliente: sale.nomeCliente,
           valorVenda: sale.valorTotal,
           comissao: commissionAmt,
@@ -1120,7 +1332,7 @@ export const RelatoriosView: React.FC = () => {
       const entry = map[sale.vendedorId];
       if (entry) {
         entry.salesCount += 1;
-        entry.grossRevenue += sale.valorTotal;
+        entry.grossRevenue += getSaleGross(sale);
       }
     });
 
@@ -1139,7 +1351,7 @@ export const RelatoriosView: React.FC = () => {
         map[key] = { hotel: key, salesCount: 0, grossRevenue: 0 };
       }
       map[key].salesCount += 1;
-      map[key].grossRevenue += sale.valorTotal;
+      map[key].grossRevenue += getSaleGross(sale);
     });
 
     return Object.values(map)
@@ -1161,7 +1373,7 @@ export const RelatoriosView: React.FC = () => {
       const entry = map[sale.parceiroId];
       if (entry) {
         entry.salesCount += 1;
-        entry.grossRevenue += sale.valorTotal;
+        entry.grossRevenue += getSaleGross(sale);
       }
     });
 
@@ -1175,11 +1387,11 @@ export const RelatoriosView: React.FC = () => {
   // SUB-TAB 4 METRICS: COMISSÕES (FOLHA RÁPIDA)
   // =========================================================
   const comissoesFolhaRapida = useMemo(() => {
-    const teamPayouts: Record<string, { collab: Collaborator, salesCount: number, totalCommission: number }> = {};
+    const teamPayouts: Record<string, { collab: Collaborator, salesCount: number, totalCommission: number, rawCommission: number, alboomDiscount: number }> = {};
     const partnerPayouts: Record<string, { partner: Partner, salesCount: number, totalCommission: number }> = {};
 
     collaborators.forEach(c => {
-      teamPayouts[c.id] = { collab: c, salesCount: 0, totalCommission: 0 };
+      teamPayouts[c.id] = { collab: c, salesCount: 0, totalCommission: 0, rawCommission: 0, alboomDiscount: 0 };
     });
     partners.forEach(p => {
       partnerPayouts[p.id] = { partner: p, salesCount: 0, totalCommission: 0 };
@@ -1190,12 +1402,17 @@ export const RelatoriosView: React.FC = () => {
       const partner = partners.find(p => p.id === sale.parceiroId);
       const act = activities.find(a => a.id === sale.atividadeId);
 
-      const teamComm = Number(calculateCollaboratorCommission(sale, collab, act));
+      const rawTeamComm = Number(calculateCollaboratorCommission(sale, collab, act));
+      const taxes = calculateSaleTaxes(sale, feeRules);
+      const alboomDiscount = taxes.teamTax;
+      const teamComm = Math.max(0, rawTeamComm - alboomDiscount);
       const partComm = Number(calculatePartnerCommission(sale, partner, act));
 
       if (collab && teamPayouts[collab.id]) {
         teamPayouts[collab.id].salesCount += 1;
         teamPayouts[collab.id].totalCommission += teamComm;
+        teamPayouts[collab.id].rawCommission += rawTeamComm;
+        teamPayouts[collab.id].alboomDiscount += alboomDiscount;
       }
       if (partner && partnerPayouts[partner.id]) {
         partnerPayouts[partner.id].salesCount += 1;
@@ -1224,9 +1441,18 @@ export const RelatoriosView: React.FC = () => {
   }, [partners, comissoesFolhaRapida.partners]);
 
 
-  const currentPeriodText = isAnnualView 
-    ? `Ano de ${selectedYear}`
-    : `${months[selectedMonth - 1]} de ${selectedYear}`;
+  const formatDateString = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return dateStr;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  };
+
+  const currentPeriodText = useCustomDateRange && startDate && endDate
+    ? `De ${formatDateString(startDate)} até ${formatDateString(endDate)}`
+    : isAnnualView 
+      ? `Ano de ${selectedYear}`
+      : `${months[selectedMonth - 1]} de ${selectedYear}`;
 
 
   if (!isAuthorized) {
@@ -1250,36 +1476,50 @@ export const RelatoriosView: React.FC = () => {
     <div className="space-y-6 text-slate-900 animate-fade-in print:p-0 print:space-y-4 font-sans focus:outline-none pb-12">
       
       {/* ========================================================= */}
-      {/* 1. GLOBAL NAVIGATION & CONTROL HEAD BAR                   */}
       {/* ========================================================= */}
-      <div id="dashboard-header-container" className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6 print:hidden">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-slate-900 text-white rounded-xl">
-              <TrendingUp className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tight text-slate-900 font-sans">
-                DASHBOARD
-              </h1>
-              <span className="text-[10px] font-extrabold text-slate-400 block mt-0.5 tracking-wider uppercase font-sans">
-                ALL ANGLE • SISTEMA COMERCIAL
-              </span>
-            </div>
+      {/* 1. TITLE CONTAINER                                        */}
+      {/* ========================================================= */}
+      <div id="dashboard-title-container" className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-sm">
+            <TrendingUp className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black tracking-tight text-slate-950 font-sans uppercase">
+              Dashboard de Desempenho
+            </h1>
+            <span className="text-[10px] font-black text-slate-400 block mt-1 tracking-wider uppercase font-sans">
+              ALL ANGLE • SISTEMA COMERCIAL E DE REPASSES
+            </span>
           </div>
         </div>
+        
+        {/* Current analyzed period badge */}
+        <div className="self-start sm:self-auto px-4 py-2 bg-slate-100 text-slate-800 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 border border-slate-200 shadow-2xs">
+          <Calendar className="w-4 h-4 text-slate-600" />
+          <span>Competência: <strong className="text-slate-950 font-black">{currentPeriodText}</strong></span>
+        </div>
+      </div>
 
-        {/* Unified Control Grid */}
-        <div className="flex flex-wrap items-end gap-3.5 lg:justify-end">
+      {/* ========================================================= */}
+      {/* 2. FILTERS CONTAINER                                      */}
+      {/* ========================================================= */}
+      <div id="dashboard-filters-container" className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5 print:hidden">
+        <div className="border-b border-slate-100 pb-2 flex items-center justify-between">
+          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Painel de Filtros e Parâmetros</span>
+          <span className="text-[9px] font-extrabold text-indigo-600 uppercase font-mono bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">Filtros Ativos</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 items-end">
           
           {/* Dropdown "Atividade" */}
           <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider mb-1 block font-sans">Atividade</span>
+            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Atividade</span>
             <select
               id="dashboard-activity-control"
               value={selectedActivityId}
               onChange={(e) => setSelectedActivityId(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer min-w-40 font-sans"
+              className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
             >
               <option value="all">Geral</option>
               {activities.map(act => (
@@ -1290,12 +1530,12 @@ export const RelatoriosView: React.FC = () => {
 
           {/* Dropdown "Equipe" */}
           <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider mb-1 block font-sans">Equipe</span>
+            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Equipe</span>
             <select
               id="dashboard-vendedor-control"
               value={selectedVendedorId}
               onChange={(e) => setSelectedVendedorId(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer min-w-40 font-sans"
+              className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
             >
               <option value="all">Toda a Equipe</option>
               {collaborators
@@ -1306,78 +1546,177 @@ export const RelatoriosView: React.FC = () => {
             </select>
           </div>
 
-          {/* Visão Anual Switch */}
-          <div className="flex flex-col items-center">
-            <span id="annual-view-label" className="text-[9px] uppercase font-black text-slate-400 tracking-wider mb-1.5 block font-sans">Visão Anual</span>
-            <button
-              id="annual-switch-element"
-              type="button"
-              onClick={() => setIsAnnualView(!isAnnualView)}
-              className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border border-slate-200 transition-colors duration-200 ease-in-out focus:outline-none items-center p-0.5 ${
-                isAnnualView ? 'bg-slate-900 border-slate-800' : 'bg-slate-100'
-              }`}
-              aria-labelledby="annual-view-label"
-            >
-              <div
-                className={`bg-white w-4.5 h-4.5 rounded-full shadow transform transition-transform duration-200 ${
-                  isAnnualView ? 'translate-x-6' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Month selector (hidden during Visão Anual) */}
-          {!isAnnualView && (
-            <div className="flex flex-col">
-              <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider mb-1 block font-sans">Mês</span>
-              <select
-                id="dashboard-month-control"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer font-sans"
-              >
-                {months.map((m, idx) => (
-                  <option key={idx} value={idx + 1}>{m}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Year selector */}
+          {/* Dropdown "Forma de Pagamento" */}
           <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider mb-1 block font-sans">Ano</span>
+            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Meio de Pagamento</span>
             <select
-              id="dashboard-year-control"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer font-sans"
+              value={selectedPaymentMethod}
+              onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
             >
-              <option value={2025}>2025</option>
-              <option value={2026}>2026</option>
-              <option value={2027}>2027</option>
+              <option value="all">Todos</option>
+              <option value="PIX">PIX</option>
+              <option value="Crédito à Vista">Crédito à Vista</option>
+              <option value="Crédito Parcelado">Crédito Parcelado</option>
+              <option value="Débito">Débito</option>
+              <option value="Dinheiro">Dinheiro</option>
+              <option value="Boleto">Boleto</option>
+              <option value="Cortesia / Bonificação">Cortesia / Bonificação</option>
+              <option value="Faturamento Faturado">Faturamento Faturado</option>
             </select>
           </div>
 
-          {/* High contrast Export Triggers */}
-          <div className="flex items-center gap-2">
+          {/* Dropdown "Taxas e Descontos" */}
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Taxas / Descontos</span>
+            <select
+              value={selectedTaxId}
+              onChange={(e) => setSelectedTaxId(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
+            >
+              <option value="all">Todos</option>
+              <option value="alboom-pay-default">Alboom Pay Padrão (0,99%)</option>
+              {feeRules.filter(r => !r.arquivado).map(rule => (
+                <option key={rule.id} value={rule.id}>
+                  {rule.nome} ({(rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0)}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Conditional Date Filter Inputs */}
+          {useCustomDateRange ? (
+            <>
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Data Inicial</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer w-full font-sans shadow-2xs"
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Data Final</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer w-full font-sans shadow-2xs"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Month selector (hidden during Visão Anual) */}
+              {!isAnnualView && (
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Mês</span>
+                  <select
+                    id="dashboard-month-control"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
+                  >
+                    {months.map((m, idx) => (
+                      <option key={idx} value={idx + 1}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Year selector */}
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5 block font-sans">Ano</span>
+                <select
+                  id="dashboard-year-control"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
+                >
+                  <option value={2025}>2025</option>
+                  <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Switched Options (Visão Anual & Filtro por Intervalo) */}
+          <div className="flex flex-wrap gap-6 py-2">
+            {/* Visão Anual Switch */}
+            <div className="flex items-center gap-3">
+              <button
+                id="annual-switch-element"
+                type="button"
+                onClick={() => {
+                  setIsAnnualView(!isAnnualView);
+                  if (!isAnnualView) setUseCustomDateRange(false);
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none items-center p-0.5 ${
+                  isAnnualView ? 'bg-indigo-600 border-indigo-700' : 'bg-slate-300 border-slate-400'
+                }`}
+                aria-labelledby="annual-view-label"
+              >
+                <div
+                  className={`bg-white w-4.5 h-4.5 rounded-full shadow transform transition-transform duration-200 ${
+                    isAnnualView ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span id="annual-view-label" className="text-[10px] uppercase font-black text-slate-600 tracking-wider font-sans cursor-pointer select-none" onClick={() => {
+                setIsAnnualView(!isAnnualView);
+                if (!isAnnualView) setUseCustomDateRange(false);
+              }}>Visão Anual</span>
+            </div>
+
+            {/* Custom Date Range Switch */}
+            <div className="flex items-center gap-3">
+              <button
+                id="custom-date-switch-element"
+                type="button"
+                onClick={() => {
+                  setUseCustomDateRange(!useCustomDateRange);
+                  if (!useCustomDateRange) setIsAnnualView(false);
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none items-center p-0.5 ${
+                  useCustomDateRange ? 'bg-indigo-600 border-indigo-700' : 'bg-slate-300 border-slate-400'
+                }`}
+                aria-labelledby="custom-date-label"
+              >
+                <div
+                  className={`bg-white w-4.5 h-4.5 rounded-full shadow transform transition-transform duration-200 ${
+                    useCustomDateRange ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span id="custom-date-label" className="text-[10px] uppercase font-black text-slate-600 tracking-wider font-sans cursor-pointer select-none" onClick={() => {
+                setUseCustomDateRange(!useCustomDateRange);
+                if (!useCustomDateRange) setIsAnnualView(false);
+              }}>Filtro por Intervalo</span>
+            </div>
+          </div>
+
+          {/* Export Action Buttons */}
+          <div className="col-span-full xl:col-span-1 xl:justify-self-end flex items-center gap-2.5 w-full xl:w-auto mt-2 xl:mt-0 pt-4 border-t border-slate-100 xl:border-none xl:pt-0">
             <button
               id="print-pdf-trigger-action"
               type="button"
               onClick={handleExportPDF}
-              className="h-9 flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white transition-all cursor-pointer border-none px-4 rounded-xl text-xs font-black shadow-md uppercase tracking-wider font-sans"
+              className="flex-1 xl:flex-none h-11 flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white transition-all cursor-pointer border-none px-5 rounded-xl text-xs font-black shadow-md uppercase tracking-wider font-sans"
             >
-              <FileText className="w-3.5 h-3.5 text-white" />
-              Exportar PDF
+              <FileText className="w-4 h-4 text-white" />
+              PDF
             </button>
 
             <button
               id="export-excel-trigger-action"
               type="button"
               onClick={handleExportExcel}
-              className="h-9 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer border-none px-4 rounded-xl text-xs font-black shadow-md uppercase tracking-wider font-sans"
+              className="flex-1 xl:flex-none h-11 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer border-none px-5 rounded-xl text-xs font-black shadow-md uppercase tracking-wider font-sans"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-white" />
-              Exportar Excel
+              <FileSpreadsheet className="w-4 h-4 text-white" />
+              Excel
             </button>
           </div>
 
@@ -1422,7 +1761,7 @@ export const RelatoriosView: React.FC = () => {
             </div>
             <div className="text-center md:text-right">
               <span className="text-[9px] text-slate-400 font-bold block uppercase">Margem Líquida</span>
-              <span className="text-xl font-bold font-sans tracking-tight text-emerald-400 block mt-0.5 print:text-slate-900 font-mono">R$ {mesDestaque.netMargin.toFixed(2)}</span>
+              <span className="text-xl font-black font-sans tracking-tight text-emerald-300 block mt-0.5 print:text-slate-900 font-mono">R$ {mesDestaque.netMargin.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -1478,16 +1817,28 @@ export const RelatoriosView: React.FC = () => {
           {currentUser.cargo === 'Admin' ? 'Comissão da Equipe' : 'Sua Comissão'}
         </button>
         {currentUser.cargo === 'Admin' && (
-          <button
-            onClick={() => setActiveTab('comissao_parceiros')}
-            className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer rounded-xl font-sans ${
-              activeTab === 'comissao_parceiros'
-                ? 'bg-[#0e2438] text-white shadow-xs font-black'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
-            }`}
-          >
-            Comissão de Parceiros
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('comissao_parceiros')}
+              className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer rounded-xl font-sans ${
+                activeTab === 'comissao_parceiros'
+                  ? 'bg-[#0e2438] text-white shadow-xs font-black'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
+              }`}
+            >
+              Comissão de Parceiros
+            </button>
+            <button
+              onClick={() => setActiveTab('alboom_pay')}
+              className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer rounded-xl font-sans ${
+                activeTab === 'alboom_pay'
+                  ? 'bg-[#0e2438] text-white shadow-xs font-black'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
+              }`}
+            >
+              Alboom Pay
+            </button>
+          </>
         )}
         <button
           onClick={() => setActiveTab('insights')}
@@ -1512,11 +1863,11 @@ export const RelatoriosView: React.FC = () => {
           <div className="bg-slate-900 text-white rounded-3xl border border-slate-800 p-8 shadow-xl animate-slide-up space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
               <div>
-                <span className="text-[10px] text-indigo-400 font-extrabold tracking-widest uppercase block mb-1">Destaque Operacional</span>
+                <span className="text-[10px] text-cyan-400 font-extrabold tracking-widest uppercase block mb-1">Destaque Operacional</span>
                 <h3 className="text-xl font-black tracking-tight uppercase font-sans">Demonstrativo Financeiro Consolidado</h3>
-                <p className="text-xs text-slate-400 mt-1 font-sans">Visão holística auditada de fluxo de receitas, repasses de comissão e lucratividade do período.</p>
+                <p className="text-xs text-slate-200 mt-1 font-sans">Visão holística auditada de fluxo de receitas, repasses de comissão e lucratividade do período.</p>
               </div>
-              <div className="p-3 bg-white/5 text-indigo-400 rounded-2xl border border-white/10 shrink-0">
+              <div className="p-3 bg-white/5 text-cyan-400 rounded-2xl border border-white/10 shrink-0">
                 <DollarSign className="w-6 h-6" />
               </div>
             </div>
@@ -1525,50 +1876,122 @@ export const RelatoriosView: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               
               {/* Faturamento Confirmado */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block font-sans">Faturamento Bruto Pago</span>
-                <span className="text-3xl font-black text-white font-mono block">R$ {financialTotals.grossRevenue.toFixed(2)}</span>
-                <p className="text-[9px] text-emerald-400 font-semibold uppercase font-sans">faturamento confirmado</p>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-2 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-200 font-bold uppercase tracking-wider block font-sans">Faturamento Bruto Pago</span>
+                  <span className="text-3xl font-black text-white font-mono block">R$ {financialTotals.grossRevenue.toFixed(2)}</span>
+                </div>
+                <div className="pt-2">
+                  <p className="text-[9px] text-white bg-emerald-600 border border-emerald-500 px-2.5 py-1 rounded-md inline-block font-black uppercase tracking-wider">
+                    faturamento confirmado
+                  </p>
+                </div>
               </div>
 
               {/* Custos Totais Comissões */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block font-sans">Comissões &amp; Repasses</span>
-                <span className="text-3xl font-black text-amber-500 font-mono block">R$ {financialTotals.totalCommissions.toFixed(2)}</span>
-                <p className="text-[9px] text-slate-400 font-medium uppercase font-sans">
-                  Staff: R$ {financialTotals.totalTeamCommissions.toFixed(0)} • Ind: R$ {financialTotals.totalPartnerCommissions.toFixed(0)}
-                </p>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-2 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-200 font-bold uppercase tracking-wider block font-sans">Comissões &amp; Repasses</span>
+                  <span className="text-3xl font-black text-amber-400 font-mono block">R$ {financialTotals.totalCommissions.toFixed(2)}</span>
+                </div>
+                <div className="space-y-1 bg-slate-950 p-2.5 rounded-xl border border-white/5 text-[9px] font-black text-slate-300 uppercase tracking-wider">
+                  <div className="flex justify-between items-center">
+                    <span>Equipe:</span>
+                    <span className="font-mono text-white">R$ {financialTotals.totalTeamCommissions.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-white/5 pt-1">
+                    <span>Parceiros e indicações:</span>
+                    <span className="font-mono text-white">R$ {financialTotals.totalPartnerCommissions.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-white/5 pt-1">
+                    <span>Taxas e descontos:</span>
+                    <span className="font-mono text-white">R$ {financialTotals.totalAlboomTax.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Lucro Líquido */}
-              <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-5 space-y-1">
-                <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider block font-sans">Faturamento Líquido</span>
-                <span className="text-3xl font-black text-indigo-400 font-mono block">R$ {financialTotals.netRevenue.toFixed(2)}</span>
-                <p className="text-[9px] text-indigo-300 font-semibold uppercase font-sans">margem líquida restante</p>
+              <div className="bg-emerald-600 border border-emerald-500 rounded-2xl p-5 space-y-2 flex flex-col justify-between shadow-lg text-white">
+                <div>
+                  <span className="text-[10px] text-white/95 font-black uppercase tracking-wider block font-sans">Faturamento Líquido</span>
+                  <span className="text-3xl font-black text-white font-mono block">R$ {financialTotals.netRevenue.toFixed(2)}</span>
+                </div>
+                <p className="text-[9px] text-white font-black uppercase font-sans tracking-wider border-t border-emerald-500/50 pt-2">
+                  margem líquida {financialTotals.totalAlboomTax > 0 ? `• Deduções: -R$ ${financialTotals.totalAlboomTax.toFixed(0)}` : ''}
+                </p>
               </div>
 
             </div>
 
             {/* Additional itemized structural ledger list */}
             <div className="bg-white/5 border border-white/[0.08] rounded-2xl p-5 space-y-3.5 font-sans divide-y divide-white/5 text-sm">
-              <div className="flex justify-between items-center text-slate-300 font-black pt-0 first:pt-0">
-                <span className="font-sans text-indigo-400 font-extrabold font-black">(=) Valor bruto:</span>
+              <div className="flex justify-between items-center text-slate-200 font-black pt-0 first:pt-0">
+                <span className="font-sans text-white font-black">(=) Valor bruto:</span>
                 <span className="font-mono text-white text-base font-black">R$ {financialTotals.grossRevenue.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-300 font-semibold pt-3">
+              <div className="flex justify-between items-center text-slate-200 font-semibold pt-3">
                 <span className="font-sans">(-) Repasse de Comissão (Equipe All Angle):</span>
-                <span className="font-mono text-amber-500">- R$ {financialTotals.totalTeamCommissions.toFixed(2)}</span>
+                <span className="font-mono text-amber-400 font-bold">- R$ {financialTotals.totalTeamCommissions.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-300 font-semibold pt-3">
+              <div className="flex justify-between items-center text-slate-200 font-semibold pt-3">
                 <span className="font-sans">(-) Repasse de comissão (Parceiros e indicações):</span>
-                <span className="font-mono text-amber-500">- R$ {financialTotals.totalPartnerCommissions.toFixed(2)}</span>
+                <span className="font-mono text-amber-400 font-bold">- R$ {financialTotals.totalPartnerCommissions.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-300 font-bold pt-3">
-                <span className="font-sans text-emerald-400 font-black">(=) Saldo Líquido Final para ALL ANGLE:</span>
-                <span className="font-mono text-emerald-400 text-lg font-black">R$ {financialTotals.netRevenue.toFixed(2)}</span>
+              {(Object.entries(financialTotals.taxBreakdown) as [string, number][]).map(([name, val]) => (
+                val > 0 && (
+                  <div key={name} className="flex justify-between items-center text-slate-200 font-semibold pt-3">
+                    <span className="font-sans text-cyan-300">(-) Desconto das Vendas - {name}:</span>
+                    <span className="font-mono text-cyan-400 font-bold">- R$ {val.toFixed(2)}</span>
+                  </div>
+                )
+              ))}
+              <div className="flex justify-between items-center bg-slate-950 border-2 border-emerald-500/65 rounded-2xl px-5 py-4.5 mt-4 shadow-inner">
+                <span className="font-sans text-white font-black uppercase tracking-wider text-xs">(=) Saldo Líquido Final para ALL ANGLE:</span>
+                <span className="font-mono text-emerald-400 text-2xl font-black drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.8)]">
+                  R$ {financialTotals.netRevenue.toFixed(2)}
+                </span>
               </div>
             </div>
           </div>
+
+          {/* Despesas Fixas (Apenas Consolidado no Relatório) */}
+          {financialTotals.totalFixedReportFees > 0 && (
+            <div className="bg-slate-900 text-white rounded-3xl border border-slate-800 p-8 shadow-xl space-y-4 animate-slide-up">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                <div>
+                  <span className="text-[10px] text-rose-400 font-extrabold tracking-widest uppercase block mb-1">Deduções Gerais</span>
+                  <h4 className="text-lg font-black tracking-tight uppercase font-sans">Despesas Fixas / Operacionais</h4>
+                  <p className="text-xs text-slate-400 mt-1 font-sans">Taxas fixas e mensalidades operacionais configuradas para exibição direta no relatório.</p>
+                </div>
+                <div className="p-3 bg-white/5 text-rose-400 rounded-2xl border border-white/10 shrink-0">
+                  <span className="font-sans font-black text-rose-400 text-xs uppercase">Despesa Fixa</span>
+                </div>
+              </div>
+              
+              <div className="bg-white/5 border border-white/[0.08] rounded-2xl p-5 space-y-3.5 font-sans divide-y divide-white/5 text-sm">
+                {feeRules.filter(r => !r.arquivado && r.exibirApenasConsolidado).map(rule => {
+                  if (rule.valorConsolidadoRelatorio && rule.valorConsolidadoRelatorio > 0) {
+                    return (
+                      <div key={rule.id} className="flex justify-between items-center text-slate-200 font-semibold pt-3 first:pt-0">
+                        <span className="font-sans flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                          {rule.nome}
+                        </span>
+                        <span className="font-mono text-rose-400 font-bold">R$ {rule.valorConsolidadoRelatorio.toFixed(2)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+                <div className="flex justify-between items-center bg-slate-950 border border-rose-500/30 rounded-2xl px-5 py-4.5 mt-4 shadow-inner">
+                  <span className="font-sans text-white font-black uppercase tracking-wider text-xs">Total Despesas Fixas:</span>
+                  <span className="font-mono text-rose-400 text-xl font-black">
+                    R$ {financialTotals.totalFixedReportFees.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Operational Secondary Analytics Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1906,8 +2329,10 @@ export const RelatoriosView: React.FC = () => {
                       <th className="py-3 px-4">Cliente / Origem</th>
                       <th className="py-3 px-4">Atividade</th>
                       <th className="py-3 px-4 text-center">Faturamento Mídias (V/E)</th>
-                      <th className="py-3 px-4 text-right">Valor Bruto</th>
-                      <th className="py-3 px-4 text-right">Comissões Acumuladas</th>
+                      <th className="py-3 px-4 text-right">Valor Inicial</th>
+                      <th className="py-3 px-4 text-right">Repasse Equipe</th>
+                      <th className="py-3 px-4 text-right">Parceiros & Indicações</th>
+                      <th className="py-3 px-4 text-right">Desconto Alboom Pay</th>
                       <th className="py-3 px-4 text-right">Faturamento Líquido</th>
                       <th className="py-3 px-5 text-center">Fotógrafo Responsável</th>
                     </tr>
@@ -1918,10 +2343,12 @@ export const RelatoriosView: React.FC = () => {
                       const collab = collaborators.find(c => c.id === sale.vendedorId);
                       const partner = partners.find(p => p.id === sale.parceiroId);
 
-                      const collabComm = Number(calculateCollaboratorCommission(sale, collab, activityObj));
+                      const rawCollabComm = Number(calculateCollaboratorCommission(sale, collab, activityObj));
+                      const taxes = calculateSaleTaxes(sale, feeRules);
+                      const alboomDiscount = taxes.teamTax;
+                      const collabComm = Math.max(0, rawCollabComm - alboomDiscount);
                       const partnerComm = Number(calculatePartnerCommission(sale, partner, activityObj));
-                      const totalComm = collabComm + partnerComm;
-                      const netValue = sale.valorTotal - totalComm;
+                      const netValue = sale.valorTotal - collabComm - partnerComm - taxes.totalTax;
 
                       const photosSold = getPhotosSoldInSale(sale, packages);
 
@@ -1930,7 +2357,7 @@ export const RelatoriosView: React.FC = () => {
                           
                           {/* Data */}
                           <td className="py-3 px-5 font-mono text-slate-500 whitespace-nowrap">
-                            {sale.data}
+                            {formatDate(sale.data)}
                           </td>
                           
                           {/* Cliente */}
@@ -1958,19 +2385,31 @@ export const RelatoriosView: React.FC = () => {
 
                           {/* Valor Bruto */}
                           <td className="py-3 px-4 text-right font-mono font-bold text-slate-950 whitespace-nowrap">
-                            R$ {sale.valorTotal.toFixed(2)}
+                            R$ {getSaleInitialValue(sale).toFixed(2)}
                           </td>
 
-                          {/* Comissoes details */}
-                          <td className="py-3 px-4 text-right font-mono text-rose-600 whitespace-nowrap">
-                            - R$ {totalComm.toFixed(2)}
-                            <span className="text-[9px] text-slate-400 font-semibold block uppercase font-sans">
-                              Staff: R$ {collabComm.toFixed(0)} • Ind: R$ {partnerComm.toFixed(0)}
-                            </span>
+                          {/* Repasse Equipe */}
+                          <td className="py-3 px-4 text-right font-mono text-indigo-700 font-semibold whitespace-nowrap text-xs">
+                            R$ {collabComm.toFixed(2)}
+                            {alboomDiscount > 0 && (
+                              <span className="text-[8px] text-indigo-500 font-extrabold block uppercase font-sans">
+                                R$ {rawCollabComm.toFixed(2)} [Bruto] → - R$ {alboomDiscount.toFixed(2)} [Desc] → R$ {collabComm.toFixed(2)} [Líq]
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Parceiros & Indicações */}
+                          <td className="py-3 px-4 text-right font-mono text-rose-600 whitespace-nowrap text-xs">
+                            R$ {partnerComm.toFixed(2)}
+                          </td>
+
+                          {/* Desconto Alboom Pay */}
+                          <td className="py-3 px-4 text-right font-mono text-amber-700 whitespace-nowrap text-xs">
+                            {taxes.totalTax > 0 ? `- R$ ${taxes.totalTax.toFixed(2)}` : 'R$ 0,00'}
                           </td>
 
                           {/* Faturamento Líquido */}
-                          <td className="py-3 px-4 text-right font-mono text-slate-900 font-extrabold whitespace-nowrap">
+                          <td className="py-3 px-4 text-right font-mono text-emerald-800 font-extrabold whitespace-nowrap text-xs">
                             R$ {netValue.toFixed(2)}
                           </td>
 
@@ -2104,7 +2543,7 @@ export const RelatoriosView: React.FC = () => {
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 font-sans">Comissão da Equipe</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 font-sans">Resumo de comissões acumuladas dos profissionais de campo no período.</p>
             </div>
-            {tab4SelectedCollabId && (
+            {currentUser.cargo === 'Admin' && tab4SelectedCollabId && (
               <button
                 onClick={() => setTab4SelectedCollabId('')}
                 className="text-xs font-black uppercase bg-slate-100 hover:bg-slate-200 text-slate-705 px-3 py-1.5 rounded-xl transition cursor-pointer"
@@ -2156,6 +2595,11 @@ export const RelatoriosView: React.FC = () => {
                           </span>
                           <span className="text-xs font-black text-slate-955 block uppercase font-sans text-slate-950">{item.collab.nomeCompleto}</span>
                           <span className="text-[10px] text-slate-400 font-bold block font-sans">{item.salesCount} vendas realizadas</span>
+                          {item.alboomDiscount > 0 && (
+                            <span className="text-[9px] text-indigo-600 font-bold block font-sans">
+                              (Comissão Cheia: R$ {item.rawCommission.toFixed(2)} | Alboom: -R$ {item.alboomDiscount.toFixed(2)})
+                            </span>
+                          )}
                         </div>
                         
                         <div className="text-right">
@@ -2215,30 +2659,49 @@ export const RelatoriosView: React.FC = () => {
                   </div>
 
                   {/* Consolidated Value Owed Point */}
-                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 font-sans">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-black">VALOR TOTAL DE COMISSÃO</span>
-                      <span className="text-3xl font-black text-slate-950 font-mono mt-1 block">
-                        R$ {selectedCollabDetails.totalToPay.toFixed(2)}
-                      </span>
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 font-sans">
+                    <div className="space-y-3.5 text-left flex-1 w-full">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-black">VALOR TOTAL DE COMISSÃO</span>
+                        <span className="text-3xl font-black text-slate-950 font-mono mt-1 block">
+                          R$ {selectedCollabDetails.totalToPay.toFixed(2)}
+                        </span>
+                      </div>
+                      
+                      {selectedCollabDetails.totalAlboomDiscount > 0 && (
+                        <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2 text-xs text-slate-800 max-w-xl shadow-xs">
+                          <div className="flex justify-between gap-6 border-b border-slate-100 pb-1.5">
+                            <span className="font-bold text-slate-600">Comissão Total Cheia:</span>
+                            <span className="font-mono font-black text-slate-900">R$ {selectedCollabDetails.totalRawCommission.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between gap-6 text-rose-700 font-bold border-b border-slate-100 pb-1.5">
+                            <span>Desconto de Taxas Aplicadas:</span>
+                            <span className="font-mono font-black">- R$ {selectedCollabDetails.totalAlboomDiscount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between gap-6 text-indigo-700 font-black pt-0.5">
+                            <span>Sua Comissão Líquida a Receber:</span>
+                            <span className="font-mono font-black text-sm">R$ {selectedCollabDetails.totalToPay.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-2 px-1">
+                    <div className="flex gap-2 px-1 flex-wrap sm:flex-nowrap">
                       <button
                         onClick={() => setTab4SelectedCollabId('')}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-705 font-sans font-black text-[10px] uppercase tracking-wider px-3.5 py-2 rounded-xl transition cursor-pointer"
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-705 font-sans font-black text-[10px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition cursor-pointer border border-slate-200"
                       >
                         Voltar
                       </button>
                       <button
                         onClick={handleExportCollabPDF}
-                        className="bg-slate-900 hover:bg-slate-800 text-white font-sans font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl flex items-center gap-1.5 transition print:hidden cursor-pointer"
+                        className="bg-slate-900 hover:bg-slate-800 text-white font-sans font-black text-[10px] uppercase tracking-wider px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition print:hidden cursor-pointer"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         Exportar PDF
                       </button>
                       <button
                         onClick={handleExportCollabExcel}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl flex items-center gap-1.5 transition print:hidden cursor-pointer"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-[10px] uppercase tracking-wider px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition print:hidden cursor-pointer"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5" />
                         Exportar Excel
@@ -2258,7 +2721,6 @@ export const RelatoriosView: React.FC = () => {
                         <thead>
                           <tr className="bg-slate-50/50 border-b border-slate-150 text-[10px] font-black uppercase text-slate-400 font-sans tracking-wide">
                             <th className="py-2.5 px-4 font-sans">Data</th>
-                            <th className="py-2.5 px-4 font-sans">Código do Lançamento</th>
                             <th className="py-2.5 px-4 font-sans">Nome do Cliente</th>
                             <th className="py-2.5 px-4 text-right font-sans">Valor da Comissão</th>
                           </tr>
@@ -2267,8 +2729,14 @@ export const RelatoriosView: React.FC = () => {
                           {selectedCollabDetails.entries.filter(entry => entry.comissao > 0).map(entry => (
                             <tr key={entry.rawId} className="hover:bg-slate-50/50 font-sans">
                               <td className="py-2.5 px-4 font-mono text-slate-500 font-sans">{entry.data}</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-650 font-bold font-sans">{entry.rawId || entry.id}</td>
-                              <td className="py-2.5 px-4 font-semibold text-slate-900 uppercase font-sans">{entry.cliente}</td>
+                              <td className="py-2.5 px-4 font-semibold text-slate-900 uppercase font-sans">
+                                <div>{entry.cliente}</div>
+                                {entry.alboomDiscount > 0 && (
+                                  <div className="text-[10px] text-indigo-500 font-bold normal-case mt-0.5">
+                                    [Comissão Bruta: R$ {entry.rawComissao.toFixed(2)}] ➔ [-] Desconto Taxas: -R$ {entry.alboomDiscount.toFixed(2)} ➔ [= Valor Líquido: R$ {entry.comissao.toFixed(2)}]
+                                  </div>
+                                )}
+                              </td>
                               <td className="py-2.5 px-4 font-mono text-right font-black text-slate-950 font-mono">R$ {entry.comissao.toFixed(2)}</td>
                             </tr>
                           ))}
@@ -2456,7 +2924,6 @@ export const RelatoriosView: React.FC = () => {
                         <thead>
                           <tr className="bg-slate-50/50 border-b border-slate-150 text-[10px] font-black uppercase text-slate-400 tracking-wide font-sans">
                             <th className="py-2.5 px-4 font-sans text-left">Data</th>
-                            <th className="py-2.5 px-4 font-sans text-left">Código</th>
                             <th className="py-2.5 px-4 font-sans text-left">Cliente</th>
                             <th className="py-2.5 px-4 text-right font-sans">Valor da Venda</th>
                             <th className="py-2.5 px-4 text-center font-sans">% de Repasse</th>
@@ -2466,13 +2933,12 @@ export const RelatoriosView: React.FC = () => {
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-705">
                           {selectedPartnerDetails.entries.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-400 font-bold">Nenhum lançamento registrado para este parceiro no período.</td>
+                              <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">Nenhum lançamento registrado para este parceiro no período.</td>
                             </tr>
                           ) : (
                             selectedPartnerDetails.entries.map(entry => (
                               <tr key={entry.rawId} className="hover:bg-slate-50/50">
                                 <td className="py-2.5 px-4 font-mono text-slate-500">{entry.data}</td>
-                                <td className="py-2.5 px-4 font-mono text-slate-650 font-bold">{entry.id}</td>
                                 <td className="py-2.5 px-4 font-semibold text-slate-900 uppercase">{entry.cliente}</td>
                                 <td className="py-2.5 px-4 font-mono text-right text-slate-700">R$ {entry.valorVenda.toFixed(2)}</td>
                                 <td className="py-2.5 px-4 text-center font-mono text-slate-600">{entry.percentage.toFixed(1)}%</td>
@@ -2488,6 +2954,133 @@ export const RelatoriosView: React.FC = () => {
               )}
             </div>
           )}
+
+      {/* ========================================================= */}
+      {/* SUB-TAB: ALBOOM PAY REPORT                                */}
+      {/* ========================================================= */}
+      {activeTab === 'alboom_pay' && currentUser.cargo === 'Admin' && (() => {
+        // filter paid sales in period with Alboom Tax
+        const alboomSales = paidSales.filter(s => s.alboomTax && s.alboomTax > 0);
+        
+        // compute totals
+        const totalGross = alboomSales.reduce((acc, s) => acc + s.valorTotal, 0);
+        const totalTax = alboomSales.reduce((acc, s) => acc + (s.alboomTax || 0), 0);
+        const totalNet = totalGross - totalTax;
+
+        return (
+          <div id="tab-alboom-pay" className="space-y-6 animate-slide-up">
+            
+            {/* Explanatory Header */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xs font-black uppercase text-slate-900 font-sans tracking-wider">Auditoria de Taxas do Alboom Pay</h3>
+                <p className="text-[11px] text-slate-500 font-bold mt-1 uppercase">
+                  Detalhamento de faturamento bruto, taxas cobradas (0,99%) e repasse líquido consolidado.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3.5 py-1.5 text-[10px] font-black uppercase font-mono tracking-wider">
+                <Percent className="w-3.5 h-3.5" />
+                <span>Taxa Padrão: 0,99%</span>
+              </div>
+            </div>
+
+            {/* Metrics Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              {/* Gross Amount */}
+              <div className="bg-slate-900 border border-slate-950 rounded-2xl p-5 space-y-1 shadow-lg text-white">
+                <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block font-sans">Volume Bruto Alboom Pay</span>
+                <span className="text-3xl font-black text-white font-mono block font-mono">R$ {totalGross.toFixed(2)}</span>
+                <p className="text-[9px] text-slate-400 font-extrabold uppercase font-sans">
+                  Soma de todas as vendas pagas via Alboom
+                </p>
+              </div>
+
+              {/* Total Taxes Retained */}
+              <div className="bg-indigo-600 border border-indigo-500 rounded-2xl p-5 space-y-1 shadow-lg text-white">
+                <span className="text-[10px] text-indigo-100 font-black uppercase tracking-wider block font-sans">Total de Taxas Pagas (0,99%)</span>
+                <span className="text-3xl font-black text-white font-mono block font-mono">R$ {totalTax.toFixed(2)}</span>
+                <p className="text-[9px] text-indigo-200 font-extrabold uppercase font-sans">
+                  Deduções automáticas retidas na fonte
+                </p>
+              </div>
+
+              {/* Net Revenue after Taxes */}
+              <div className="bg-emerald-600 border border-emerald-500 rounded-2xl p-5 space-y-1 shadow-lg text-white">
+                <span className="text-[10px] text-emerald-100 font-black uppercase tracking-wider block font-sans">Saldo Líquido Recebido</span>
+                <span className="text-3xl font-black text-white font-mono block font-mono">R$ {totalNet.toFixed(2)}</span>
+                <p className="text-[9px] text-emerald-200 font-extrabold uppercase font-sans">
+                  Volume final creditado na conta ALL ANGLE
+                </p>
+              </div>
+
+            </div>
+
+            {/* Sales Table with exact details */}
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                <h4 className="text-xs font-black uppercase text-slate-900 font-sans tracking-wider">Lançamentos Processados</h4>
+                <span className="text-[10px] bg-slate-100 text-slate-700 font-extrabold px-3 py-1 rounded-full uppercase tracking-wider font-mono">
+                  {alboomSales.length} {alboomSales.length === 1 ? 'Venda' : 'Vendas'}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      <th className="py-3 px-5 font-sans">Data</th>
+                      <th className="py-3 px-5 font-sans">Cliente</th>
+                      <th className="py-3 px-5 font-sans">Fotógrafo</th>
+                      <th className="py-3 px-5 font-sans text-right">Valor Inicial</th>
+                      <th className="py-3 px-5 font-sans text-right">Taxa Retida (0,99%)</th>
+                      <th className="py-3 px-5 font-sans text-right">Saldo Líquido</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {alboomSales.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-slate-400 font-bold font-sans uppercase tracking-wider">
+                          Nenhum lançamento pago via Alboom Pay no período selecionado.
+                        </td>
+                      </tr>
+                    ) : (
+                      alboomSales.map(sale => {
+                        const collab = collaborators.find(c => c.id === sale.vendedorId);
+                        const initialVal = getSaleInitialValue(sale);
+                        const tax = sale.alboomTax || 0;
+                        const net = sale.valorTotal - tax;
+                        return (
+                          <tr key={sale.id} className="hover:bg-slate-50/40 transition">
+                            <td className="py-3 px-5 font-mono text-slate-500">{formatDate(sale.data)}</td>
+                            <td className="py-3 px-5 font-bold text-slate-900 uppercase">{sale.nomeCliente}</td>
+                            <td className="py-3 px-5">
+                              {collab ? (
+                                <span 
+                                  className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black border uppercase tracking-wider"
+                                  style={getInlineTagStyle(collab.corTag)}
+                                >
+                                  {collab.nomeCompleto}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-bold">N/A</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-5 font-mono text-right text-slate-800 font-medium">R$ {initialVal.toFixed(2)}</td>
+                            <td className="py-3 px-5 font-mono text-right text-rose-600 font-extrabold">- R$ {tax.toFixed(2)}</td>
+                            <td className="py-3 px-5 font-mono text-right text-emerald-700 font-black">R$ {net.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
 
       {/* ========================================================= */}
       {/* SUB-TAB 5: INSIGHTS (VISUAL BUSINESS INTELLIGENCE)        */}

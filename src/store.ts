@@ -1,4 +1,4 @@
-import { Sale, Collaborator, Partner, Activity, Package } from './types';
+import { Sale, Collaborator, Partner, Activity, Package, FeeRule } from './types';
 
 // Central State keys
 const STATE_KEYS = {
@@ -8,7 +8,8 @@ const STATE_KEYS = {
   ACTIVITIES: 'all_angle_vendas_activities',
   PACKAGES: 'all_angle_vendas_packages',
   CURRENT_USER_EMAIL: 'all_angle_current_user_email',
-  PAID_COMMISSIONS: 'all_angle_paid_commissions' // Keeps track of paid out payroll offsets
+  PAID_COMMISSIONS: 'all_angle_paid_commissions', // Keeps track of paid out payroll offsets
+  FEERULES: 'all_angle_vendas_feerules'
 };
 
 // Root Admin pre-seeded account
@@ -199,6 +200,29 @@ export class StoreManager {
     saveState(STATE_KEYS.PAID_COMMISSIONS, paid);
   }
 
+  static getFeeRules(): FeeRule[] {
+    const list = getSavedState<FeeRule[]>(STATE_KEYS.FEERULES, []);
+    // Seed default Alboom Pay if empty
+    if (list.length === 0) {
+      const defaultAlboomRule: FeeRule = {
+        id: 'alboom-pay-default',
+        nome: 'Alboom Pay',
+        aplicarAllAngle: true,
+        porcentagemAllAngle: 0.495,
+        aplicarEquipe: true,
+        porcentagemEquipe: 0.495,
+        arquivado: false
+      };
+      saveState(STATE_KEYS.FEERULES, [defaultAlboomRule]);
+      return [defaultAlboomRule];
+    }
+    return list;
+  }
+
+  static saveFeeRules(rules: FeeRule[]): void {
+    saveState(STATE_KEYS.FEERULES, rules);
+  }
+
   // Calculate progressive pricing for a package
   static calculateEspecialPrice(pkg: Package, qty: number): { subtotal: number; precoUnitarioUsed: number } {
     if (!qty || qty <= 0) {
@@ -227,6 +251,7 @@ export class StoreManager {
       partners: this.getPartners(),
       activities: this.getActivities(),
       packages: this.getPackages(),
+      feeRules: this.getFeeRules(),
       paidCommissions: this.getPaidCommissions(),
       currentUserEmail: this.getCurrentUserEmail()
     };
@@ -252,6 +277,9 @@ export class StoreManager {
       }
       if (Array.isArray(data.packages)) {
         this.savePackages(data.packages);
+      }
+      if (Array.isArray(data.feeRules)) {
+        this.saveFeeRules(data.feeRules);
       }
       if (data.paidCommissions && typeof data.paidCommissions === 'object') {
         this.savePaidCommissions(data.paidCommissions);
