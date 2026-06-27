@@ -885,22 +885,49 @@ export const HomeView: React.FC = () => {
     });
   }, [formData.fotosVendidas, formData.pessoas, packages, formPeopleCount]);
 
-  // Auto-calculate fotosVendidas for packages with a closed limit/photo-allotment per person
+  // Handle initializing or adjusting photo metrics based on the selected package's registered attributes
   useEffect(() => {
-    if (currentSelectedPackage && currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
-      const ppl = Math.max(1, parseInt(formData.pessoas, 10) || 1);
-      const expectedPhotos = currentSelectedPackage.limiteFotosPorPessoa * ppl;
+    if (!isLaunchModalOpen || editingSale) return;
+
+    if (currentSelectedPackage) {
+      const isVendaDireta = currentSelectedPackage.vendaDireta !== false;
+      const isStandard = currentSelectedPackage.tipoPreco === 'Standard';
+
+      let defaultVendidas = '';
+      if (isVendaDireta) {
+        if (isStandard && currentSelectedPackage.fotosPacote) {
+          defaultVendidas = String(currentSelectedPackage.fotosPacote);
+        } else if (currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
+          const ppl = Math.max(1, parseInt(formData.pessoas, 10) || 1);
+          defaultVendidas = String(currentSelectedPackage.limiteFotosPorPessoa * ppl);
+        }
+      }
+
       setFormData(prev => {
-        if (prev.fotosVendidas !== String(expectedPhotos)) {
+        // Only update if they have actually changed to avoid loop.
+        // We keep fotosEnviadas completely empty/unfilled by default ("Sem número pré estabelecido de fotos enviadas")
+        if (prev.fotosVendidas !== defaultVendidas || prev.fotosEnviadas !== '') {
           return {
             ...prev,
-            fotosVendidas: String(expectedPhotos)
+            fotosEnviadas: '',
+            fotosVendidas: defaultVendidas
+          };
+        }
+        return prev;
+      });
+    } else {
+      setFormData(prev => {
+        if (prev.fotosVendidas !== '' || prev.fotosEnviadas !== '') {
+          return {
+            ...prev,
+            fotosEnviadas: '',
+            fotosVendidas: ''
           };
         }
         return prev;
       });
     }
-  }, [selectedPackageId, formData.pessoas, currentSelectedPackage]);
+  }, [selectedPackageId, currentSelectedPackage, formData.pessoas, isLaunchModalOpen, editingSale]);
 
   const effectiveCartItems = useMemo(() => {
     if (!currentSelectedPackage) {
@@ -2313,10 +2340,10 @@ export const HomeView: React.FC = () => {
 
                   {/* Email */}
                   <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">E-MAIL</label>
+                    <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">E-MAIL (OPCIONAL)</label>
                     <input
-                      type="email"
-                      placeholder="nome@dominio.com"
+                      type="text"
+                      placeholder="nome@dominio.com (Opcional)"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="w-full bg-white/5 border border-white/10 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 mt-1"
@@ -2739,7 +2766,7 @@ export const HomeView: React.FC = () => {
                                 className="w-full bg-slate-800 border-2 border-slate-700 hover:border-slate-600 px-4 py-3 text-xs rounded-xl block focus:outline-none focus:border-indigo-500 mt-1 text-indigo-300 font-black cursor-pointer uppercase tracking-wider"
                               >
                                 <option value="" className="bg-slate-900 text-white font-black">Sem Taxa / Desconto</option>
-                                {feeRules.filter(r => !r.arquivado && !r.exibirApenasConsolidado && r.id !== 'alboom-pay-default').map(rule => {
+                                {feeRules.filter(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0)).map(rule => {
                                   const totalVal = (rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0);
                                   const isFixo = rule.tipoDesconto === 'fixo';
                                   return (

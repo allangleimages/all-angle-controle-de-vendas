@@ -414,14 +414,20 @@ const NavigationMaster: React.FC = () => {
 
           {/* Notifications bell dropdown */}
           {(() => {
-            const abandonedSalesList = sales.filter(s => s.status === 'Abandonada' || s.status === 'Pendente');
+            const abandonedSalesList = sales.filter(s => {
+              if (s.status !== 'Abandonada') return false;
+              if (!isAdmin) {
+                return s.vendedorId === currentUser.id;
+              }
+              return true;
+            });
             return (
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setIsNotifDropdownOpen(!isNotifDropdownOpen)}
                   className="h-10 w-10 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 transition-all cursor-pointer relative flex items-center justify-center"
-                  title="Notificações de Lançamentos Pendentes e Carrinhos Abandonados"
+                  title="Notificações de Carrinhos Abandonados"
                 >
                   <Bell className="w-5 h-5 text-white" />
                   {abandonedSalesList.length > 0 && (
@@ -447,7 +453,7 @@ const NavigationMaster: React.FC = () => {
                         <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
                           <div className="flex items-center gap-2">
                             <Bell className="w-4 h-4 text-indigo-400" />
-                            <span className="text-xs font-black uppercase tracking-wider">Alertas de Vendas</span>
+                            <span className="text-xs font-black uppercase tracking-wider">Carrinhos Abandonados</span>
                           </div>
                           <span className="text-[9px] bg-rose-500/20 text-rose-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
                             {abandonedSalesList.length} Ativas
@@ -457,7 +463,7 @@ const NavigationMaster: React.FC = () => {
                         <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                           {abandonedSalesList.length === 0 ? (
                             <div className="p-6 text-center text-slate-400 text-xs font-bold">
-                              Nenhuma venda pendente ou carrinho abandonado. 🎉
+                              Nenhum carrinho abandonado. 🎉
                             </div>
                           ) : (
                             abandonedSalesList.map(sale => {

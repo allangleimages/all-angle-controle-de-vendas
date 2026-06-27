@@ -146,25 +146,7 @@ export class StoreManager {
   }
 
   static getPackages(): Package[] {
-    const list = getSavedState<Package[]>(STATE_KEYS.PACKAGES, []);
-    let changed = false;
-    const updated = list.map(pkg => {
-      if (pkg.nomePacote && (pkg.nomePacote.toLowerCase().includes('avulso') || pkg.nomePacote.toLowerCase().includes('avulsa'))) {
-        if (!pkg.possuiLimiteFotosPorPessoa || pkg.limiteFotosPorPessoa !== 25) {
-          changed = true;
-          return {
-            ...pkg,
-            possuiLimiteFotosPorPessoa: true,
-            limiteFotosPorPessoa: 25
-          };
-        }
-      }
-      return pkg;
-    });
-    if (changed) {
-      saveState(STATE_KEYS.PACKAGES, updated);
-    }
-    return updated;
+    return getSavedState<Package[]>(STATE_KEYS.PACKAGES, []);
   }
 
   static savePackages(packages: Package[]): void {

@@ -159,7 +159,9 @@ export const RelatoriosView: React.FC = () => {
     }
     drawRow("(-) Repasse de Comissão (Equipe All Angle):", `- R$ ${financialTotals.totalTeamCommissions.toFixed(2)}`);
     drawRow("(-) Repasse de comissão (Parceiros e indicações):", `- R$ ${financialTotals.totalPartnerCommissions.toFixed(2)}`);
-    drawRow("(-) Valor Descontado Taxa Alboom Pay:", `- R$ ${financialTotals.totalAlboomTax.toFixed(2)}`);
+    const activeDiscountTaxRule = feeRules.find(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0));
+    const taxLabelName = activeDiscountTaxRule ? activeDiscountTaxRule.nome : 'Alboom Pay';
+    drawRow(`(-) Valores Descontados ${taxLabelName}:`, `- R$ ${financialTotals.totalAlboomTax.toFixed(2)}`);
     drawRow("(=) Saldo Líquido Final para ALL ANGLE:", `R$ ${financialTotals.netRevenue.toFixed(2)}`, true);
     
     if (financialTotals.totalFixedReportFees > 0) {
@@ -611,7 +613,9 @@ export const RelatoriosView: React.FC = () => {
     }
     csvContent += `(-) Repasse de Comissão (Equipe All Angle):;${financialTotals.totalTeamCommissions.toFixed(2).replace('.', ',')}\r\n`;
     csvContent += `(-) Repasse de comissão (Parceiros e indicações):;${financialTotals.totalPartnerCommissions.toFixed(2).replace('.', ',')}\r\n`;
-    csvContent += `(-) Valores Descontados por Venda:;${financialTotals.totalAlboomTax.toFixed(2).replace('.', ',')}\r\n`;
+    const activeDiscountTaxRule = feeRules.find(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0));
+    const taxLabelName = activeDiscountTaxRule ? activeDiscountTaxRule.nome : 'Alboom Pay';
+    csvContent += `(-) Valores Descontados ${taxLabelName}:;${financialTotals.totalAlboomTax.toFixed(2).replace('.', ',')}\r\n`;
     csvContent += `(=) Saldo Líquido Final para ALL ANGLE:;${financialTotals.netRevenue.toFixed(2).replace('.', ',')}\r\n\r\n`;
 
     if (financialTotals.totalFixedReportFees > 0) {
@@ -1575,8 +1579,7 @@ export const RelatoriosView: React.FC = () => {
               className="bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-3.5 py-2.5 text-xs font-black focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer w-full font-sans shadow-2xs"
             >
               <option value="all">Todos</option>
-              <option value="alboom-pay-default">Alboom Pay Padrão (0,99%)</option>
-              {feeRules.filter(r => !r.arquivado).map(rule => (
+              {feeRules.filter(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0)).map(rule => (
                 <option key={rule.id} value={rule.id}>
                   {rule.nome} ({(rule.porcentagemAllAngle || 0) + (rule.porcentagemEquipe || 0)}%)
                 </option>
