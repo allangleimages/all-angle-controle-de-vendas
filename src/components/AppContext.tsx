@@ -140,6 +140,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (changed) {
       setSales(agedSales);
+      // Persist the auto-aged statuses directly to Firestore to prevent remote state overriding them
+      agedSales.forEach(s => {
+        const original = sales.find(o => o.id === s.id);
+        if (original && original.status !== s.status) {
+          setDoc(doc(db, "sales", s.id), s).catch(err => {
+            console.error(`Error saving aged sale on mount ${s.id}:`, err);
+          });
+        }
+      });
     }
 
     // Dynamic Sincronização do Firestore
@@ -377,17 +386,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // Automatic Retroactive Audit & Recalculation (Valor Bruto = Valor Total pós-desconto)
+        // Automatic Retroactive Audit & Recalculation (Valor Bruto = Valor Total pós-desconto) + Auto-Aging
         let migratedCount = 0;
         finalSales = await Promise.all(finalSales.map(async (s) => {
-          if (s.valorBruto !== s.valorTotal) {
+          let sChanged = false;
+          let updatedStatus = s.status;
+
+          if (s.status === 'Pendente') {
+            const saleDate = new Date(s.data + 'T00:00:00');
+            const diffDays = (today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (diffDays >= 30) {
+              updatedStatus = 'Archived' as const;
+              sChanged = true;
+            } else if (diffDays >= 7) {
+              updatedStatus = 'Abandonada' as const;
+              sChanged = true;
+            }
+          } else if (s.status === 'Abandonada') {
+            const saleDate = new Date(s.data + 'T00:00:00');
+            const diffDays = (today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (diffDays >= 30) {
+              updatedStatus = 'Archived' as const;
+              sChanged = true;
+            }
+          }
+
+          let updatedSale = { ...s };
+          if (sChanged) {
+            updatedSale.status = updatedStatus;
+          }
+
+          if (updatedSale.valorBruto !== updatedSale.valorTotal) {
             migratedCount++;
-            const updatedSale = { ...s, valorBruto: s.valorTotal };
+            updatedSale.valorBruto = updatedSale.valorTotal;
+            sChanged = true;
+          }
+
+          if (sChanged) {
             await setDoc(doc(db, "sales", s.id), updatedSale).catch(err => {
-              console.error(`Migration error on sale ${s.id}:`, err);
+              console.error(`Migration/Aging error on sale ${s.id}:`, err);
             });
             return updatedSale;
           }
+
           return s;
         }));
         if (migratedCount > 0) {
