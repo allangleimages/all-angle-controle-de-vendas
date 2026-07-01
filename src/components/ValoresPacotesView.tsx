@@ -26,7 +26,7 @@ export const ValoresPacotesView: React.FC = () => {
   // Form states
   const [atividadeId, setAtividadeId] = useState('');
   const [nomePacote, setNomePacote] = useState('');
-  const [tipoPreco, setTipoPreco] = useState<'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa'>('Standard');
+  const [tipoPreco, setTipoPreco] = useState<'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo'>('Standard');
   const [parceiroId, setParceiroId] = useState('');
 
   // Pricing fields
@@ -40,6 +40,9 @@ export const ValoresPacotesView: React.FC = () => {
   const [precoPrimeiraPessoa, setPrecoPrimeiraPessoa] = useState('800');
   const [precoSegundaPessoa, setPrecoSegundaPessoa] = useState('0');
   const [precoAdicionalPessoa, setPrecoAdicionalPessoa] = useState('200');
+  const [pessoasMinimas, setPessoasMinimas] = useState('2');
+  const [valorPorPessoa, setValorPorPessoa] = useState('120');
+  const [fotosPorPessoa, setFotosPorPessoa] = useState('3');
   const [possuiLimiteFotosPorPessoa, setPossuiLimiteFotosPorPessoa] = useState(false);
   const [limiteFotosPorPessoa, setLimiteFotosPorPessoa] = useState('25');
   const [mensagemAbandono, setMensagemAbandono] = useState('Olá {nomeCliente}! Verificamos que o seu carrinho de fotos da atividade {atividade} está registrado. Para escolher e receber suas fotos, acesse nosso link de seleção. Estamos te esperando!');
@@ -134,6 +137,9 @@ export const ValoresPacotesView: React.FC = () => {
     setPrecoPrimeiraPessoa('800');
     setPrecoSegundaPessoa('0');
     setPrecoAdicionalPessoa('200');
+    setPessoasMinimas('2');
+    setValorPorPessoa('120');
+    setFotosPorPessoa('3');
     setPossuiLimiteFotosPorPessoa(false);
     setLimiteFotosPorPessoa('25');
     setMensagemAbandono('Olá {nomeCliente}! Verificamos que o seu carrinho de fotos da atividade {atividade} está registrado. Para escolher e receber suas fotos, acesse nosso link de seleção. Estamos te esperando!');
@@ -164,6 +170,9 @@ export const ValoresPacotesView: React.FC = () => {
     setPrecoPrimeiraPessoa(pkg.precoPrimeiraPessoa?.toString() || '800');
     setPrecoSegundaPessoa(pkg.precoSegundaPessoa !== undefined ? pkg.precoSegundaPessoa.toString() : '0');
     setPrecoAdicionalPessoa(pkg.precoAdicionalPessoa?.toString() || '200');
+    setPessoasMinimas(pkg.pessoasMinimas?.toString() || '2');
+    setValorPorPessoa(pkg.valorPorPessoa?.toString() || '120');
+    setFotosPorPessoa(pkg.fotosPorPessoa?.toString() || '3');
     setPossuiLimiteFotosPorPessoa(pkg.possuiLimiteFotosPorPessoa || false);
     setLimiteFotosPorPessoa(pkg.limiteFotosPorPessoa?.toString() || '25');
     setMensagemAbandono(pkg.mensagemAbandono || 'Olá {nomeCliente}! Verificamos que o seu carrinho de fotos da atividade {atividade} está registrado. Para escolher e receber suas fotos, acesse nosso link de seleção. Estamos te esperando!');
@@ -263,6 +272,32 @@ export const ValoresPacotesView: React.FC = () => {
             return;
           }
         }
+      } else if (tipoPreco === 'FixoMaisProgressivo') {
+        if (!pessoasMinimas || isNaN(parseInt(pessoasMinimas, 10))) {
+          setError('Por favor, informe a quantidade mínima de pessoas!');
+          return;
+        }
+        if (!valorPorPessoa || isNaN(parseFloat(valorPorPessoa))) {
+          setError('Por favor, informe o valor por pessoa!');
+          return;
+        }
+        if (!fotosPorPessoa || isNaN(parseInt(fotosPorPessoa, 10))) {
+          setError('Por favor, informe a quantidade de fotos por pessoa!');
+          return;
+        }
+        if (!tiers || tiers.length === 0) {
+          setError('Por favor, adicione pelo menos uma faixa de preço progressivo!');
+          return;
+        }
+        for (let i = 0; i < tiers.length; i++) {
+          const t = tiers[i];
+          if (t.minFotos === undefined || t.minFotos === null || isNaN(Number(t.minFotos)) ||
+              t.maxFotos === undefined || t.maxFotos === null || isNaN(Number(t.maxFotos)) ||
+              t.precoUnitario === undefined || t.precoUnitario === null || isNaN(Number(t.precoUnitario))) {
+            setError(`Por favor, preencha corretamente todas as faixas do preço progressivo (Faixa ${i + 1})!`);
+            return;
+          }
+        }
       }
 
       if (possuiLimiteFotosPorPessoa) {
@@ -293,12 +328,15 @@ export const ValoresPacotesView: React.FC = () => {
         payload.maxFotosEnviadas = tipoPreco === 'Standard' ? parseInt(maxFotosEnviadas, 10) || 0 : undefined;
         payload.possuiLimiteFotosPorPessoa = possuiLimiteFotosPorPessoa;
         payload.limiteFotosPorPessoa = possuiLimiteFotosPorPessoa ? parseInt(limiteFotosPorPessoa, 10) || 0 : undefined;
-        payload.tiers = tipoPreco === 'Especial' ? tiers : undefined;
+        payload.tiers = (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers : undefined;
         payload.vendaDireta = vendaDireta;
         payload.incluirMetricaFotos = incluirMetricaFotos;
         payload.precoPrimeiraPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoPrimeiraPessoa) || 0 : undefined;
         payload.precoSegundaPessoa = tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFloat(precoSegundaPessoa)) : undefined;
         payload.precoAdicionalPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoAdicionalPessoa) || 0 : undefined;
+        payload.pessoasMinimas = tipoPreco === 'FixoMaisProgressivo' ? parseInt(pessoasMinimas, 10) || 0 : undefined;
+        payload.valorPorPessoa = tipoPreco === 'FixoMaisProgressivo' ? parseFloat(valorPorPessoa) || 0 : undefined;
+        payload.fotosPorPessoa = tipoPreco === 'FixoMaisProgressivo' ? parseInt(fotosPorPessoa, 10) || 0 : undefined;
       }
 
       if (editingPackage) {
@@ -313,10 +351,13 @@ export const ValoresPacotesView: React.FC = () => {
           maxFotosEnviadas: tipoPreco === 'Standard' ? parseInt(maxFotosEnviadas, 10) || 0 : undefined,
           possuiLimiteFotosPorPessoa,
           limiteFotosPorPessoa: possuiLimiteFotosPorPessoa ? parseInt(limiteFotosPorPessoa, 10) || 0 : undefined,
-          tiers: tipoPreco === 'Especial' ? tiers : undefined,
+          tiers: (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers : undefined,
           precoPrimeiraPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoPrimeiraPessoa) || 0 : undefined,
           precoSegundaPessoa: tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFloat(precoSegundaPessoa)) : undefined,
           precoAdicionalPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoAdicionalPessoa) || 0 : undefined,
+          pessoasMinimas: tipoPreco === 'FixoMaisProgressivo' ? parseInt(pessoasMinimas, 10) || 0 : undefined,
+          valorPorPessoa: tipoPreco === 'FixoMaisProgressivo' ? parseFloat(valorPorPessoa) || 0 : undefined,
+          fotosPorPessoa: tipoPreco === 'FixoMaisProgressivo' ? parseInt(fotosPorPessoa, 10) || 0 : undefined,
           vendaDireta,
           incluirMetricaFotos,
           mensagemAbandono: mensagemAbandono.trim(),
@@ -392,6 +433,9 @@ export const ValoresPacotesView: React.FC = () => {
                 } : pkg.tipoPreco === 'ProgressivoPessoa' ? {
                   badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
                   typeName: 'Valor Progressivo (Por Pessoa) 👥',
+                } : pkg.tipoPreco === 'FixoMaisProgressivo' ? {
+                  badgeClass: 'bg-pink-50 text-pink-800 border-pink-200',
+                  typeName: 'Valor Fixo + Prog. Foto 👥📈',
                 } : {
                   badgeClass: 'bg-purple-50 text-purple-800 border-purple-200',
                   typeName: 'Valor Progressivo Multi-faixa 📈',
@@ -474,6 +518,19 @@ export const ValoresPacotesView: React.FC = () => {
                           </span>
                         </div>
                       )}
+                      {pkg.tipoPreco === 'FixoMaisProgressivo' && (
+                        <div className="space-y-0.5 font-bold">
+                          <h3 className="text-sm font-black text-pink-700 font-mono leading-none">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.valorPorPessoa || 0)} por pessoa
+                          </h3>
+                          <span className="text-[9px] text-pink-900 uppercase font-bold tracking-wider block mt-1 bg-pink-50 py-0.5 rounded">
+                            {pkg.fotosPorPessoa} fotos/pessoa inclusas • Mín: {pkg.pessoasMinimas} pessoas
+                          </span>
+                          <span className="text-[8px] text-slate-500 uppercase font-semibold block mt-1 bg-slate-100 py-0.5 rounded">
+                            + {pkg.tiers?.length || 0} Faixas de Fotos Extras
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Specifications list (Inclusas & Enviadas) */}
@@ -481,7 +538,7 @@ export const ValoresPacotesView: React.FC = () => {
                       <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl">
                         <span className="text-slate-400 text-[8px] uppercase font-bold block leading-none mb-1.5">FOTOS INCLUSAS</span>
                         <span className="text-[#0e2438] font-black text-[12px] block font-mono">
-                          {pkg.tipoPreco === 'Standard' ? `${pkg.fotosPacote} fotos` : 'N/A'}
+                          {pkg.tipoPreco === 'Standard' ? `${pkg.fotosPacote} fotos` : pkg.tipoPreco === 'FixoMaisProgressivo' ? `${pkg.fotosPorPessoa} p/ pessoa` : 'N/A'}
                         </span>
                       </div>
                       <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl">
@@ -559,7 +616,7 @@ export const ValoresPacotesView: React.FC = () => {
               return (
                 <div key={pkg.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] py-2.5 first:pt-0 last:pb-0 opacity-60">
                   <div>
-                    <span className="font-extrabold text-slate-800 uppercase block">{pkg.nomePacote} ({pkg.tipoPreco === 'Standard' ? 'Pessoa' : pkg.tipoPreco === 'Foto' ? 'Foto' : 'Progressivo'})</span>
+                    <span className="font-extrabold text-slate-800 uppercase block">{pkg.nomePacote} ({pkg.tipoPreco === 'Standard' ? 'Pessoa' : pkg.tipoPreco === 'Foto' ? 'Foto' : pkg.tipoPreco === 'FixoMaisProgressivo' ? 'Fixo + Progressivo' : 'Progressivo'})</span>
                     <span className="text-[10px] text-slate-450 block mt-0.5">Atividade de Repasse: {actName}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-2 sm:mt-0">
@@ -712,6 +769,36 @@ export const ValoresPacotesView: React.FC = () => {
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium font-bold">Valor Adicional (3ª pessoa em diante):</span>
                         <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.precoAdicionalPessoa?.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {renderedSelectedPackage.tipoPreco === 'FixoMaisProgressivo' && (
+                    <div className="space-y-2 border-t border-slate-200 pt-2 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Metodologia:</span>
+                        <span className="font-bold text-slate-900 uppercase font-bold text-pink-700">Valor Fixo (por pessoa) + Valor Progressivo (por foto)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Número Mínimo de Pessoas:</span>
+                        <span className="font-bold text-slate-900">{renderedSelectedPackage.pessoasMinimas} pessoas</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Valor por Pessoa:</span>
+                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.valorPorPessoa?.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Fotos por Pessoa Inclusas:</span>
+                        <span className="font-bold text-slate-900">{renderedSelectedPackage.fotosPorPessoa} fotos</span>
+                      </div>
+                      <div className="space-y-1.5 mt-2 bg-white border border-slate-200 rounded-xl p-3 divide-y divide-slate-100">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block pb-1">Tabela de Fotos Extras (A partir de {((renderedSelectedPackage.pessoasMinimas || 2) * (renderedSelectedPackage.fotosPorPessoa || 3)) + 1}ª foto):</span>
+                        {renderedSelectedPackage.tiers?.map((tier, idx) => (
+                           <div key={idx} className="flex justify-between py-1.5 first:pt-0 last:pb-0 text-slate-700">
+                             <span className="font-semibold">De {tier.minFotos} a {tier.maxFotos} fotos extras:</span>
+                             <span className="font-bold text-pink-600">R$ {tier.precoUnitario.toFixed(2)} / unidade</span>
+                           </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1035,6 +1122,17 @@ export const ValoresPacotesView: React.FC = () => {
                           />
                           Valor progressivo por pessoa
                         </label>
+                        <label className="flex items-center gap-2 font-black text-white/60 hover:text-white cursor-pointer select-none text-[11px] uppercase p-1">
+                          <input
+                            type="radio"
+                            name="pricing_option"
+                            checked={tipoPreco === 'FixoMaisProgressivo'}
+                            onChange={() => setTipoPreco('FixoMaisProgressivo')}
+                            disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                            className="accent-white w-4 h-4 cursor-pointer"
+                          />
+                          Valor Fixo + Prog. Foto (👤📸)
+                        </label>
                       </div>
                     </div>
 
@@ -1193,6 +1291,105 @@ export const ValoresPacotesView: React.FC = () => {
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                             />
+                          </div>
+                        </div>
+                      )}
+
+                      {tipoPreco === 'FixoMaisProgressivo' && (
+                        <div className="space-y-4 bg-white/5 p-5 rounded-2xl border border-white/10">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="space-y-1.5 font-bold">
+                              <label className="text-[9px] font-bold text-white/40 uppercase block tracking-wider pl-2">MÍNIMO DE PESSOAS</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 2"
+                                value={pessoasMinimas}
+                                onChange={(e) => setPessoasMinimas(e.target.value.replace(/[^0-9]/g, ''))}
+                                disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
+                              />
+                            </div>
+                            <div className="space-y-1.5 font-bold">
+                              <label className="text-[9px] font-bold text-white/40 uppercase block tracking-wider pl-2">VALOR POR PESSOA (R$)</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 120"
+                                value={valorPorPessoa}
+                                onChange={(e) => setValorPorPessoa(e.target.value.replace(/[^0-9.]/g, ''))}
+                                disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
+                              />
+                            </div>
+                            <div className="space-y-1.5 font-bold">
+                              <label className="text-[9px] font-bold text-white/40 uppercase block tracking-wider pl-2">FOTOS POR PESSOA</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 3"
+                                value={fotosPorPessoa}
+                                onChange={(e) => setFotosPorPessoa(e.target.value.replace(/[^0-9]/g, ''))}
+                                disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 pt-2 border-t border-white/10 mt-2">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1">
+                              <span className="font-bold text-white uppercase text-[9px] tracking-widest pl-2">Faixas de Preço Progressivo para Fotos Extras</span>
+                              <button
+                                type="button"
+                                onClick={handleAddTierRow}
+                                disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                className="text-white border border-white/15 hover:bg-white/15 bg-white/5 font-extrabold uppercase text-[8px] px-3.5 py-2 rounded-lg transition"
+                              >
+                                + Adicionar Faixa Extra
+                              </button>
+                            </div>
+
+                            <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                              {tiers.map((tier, index) => (
+                                <div key={index} className="bg-white/5 p-4 rounded-xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                  <div className="flex items-center gap-2 text-[11px] text-white/70">
+                                    <span>De:</span>
+                                    <input
+                                      type="text"
+                                      value={tier.minFotos}
+                                      onChange={(e) => handleUpdateTierMin(index, e.target.value.replace(/[^0-9]/g, ''))}
+                                      disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                      className="w-16 p-2 bg-slate-950 text-white border border-white/10 text-center rounded focus:outline-none font-bold text-xs font-mono"
+                                    />
+                                    <span>fotos extras até:</span>
+                                    <input
+                                      type="text"
+                                      value={tier.maxFotos}
+                                      onChange={(e) => handleUpdateTierMax(index, e.target.value.replace(/[^0-9]/g, ''))}
+                                      disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                      className="w-16 p-2 bg-slate-950 text-white border border-white/10 text-center rounded focus:outline-none font-bold text-xs font-mono"
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-white/40 font-bold">R$</span>
+                                    <input
+                                      type="text"
+                                      value={tier.precoUnitario}
+                                      onChange={(e) => handleUpdateTierPrice(index, e.target.value.replace(/[^0-9.]/g, ''))}
+                                      disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                      className="w-24 p-2 bg-slate-950 border border-white/10 text-white text-center rounded focus:outline-none font-extrabold font-mono text-xs"
+                                    />
+                                    {tiers.length > 1 && !(editingPackage && checkPackageHasHistory(editingPackage.id)) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveTierRow(index)}
+                                        className="text-white bg-rose-700 hover:bg-rose-800 p-2 rounded border border-rose-600 cursor-pointer transition flex items-center justify-center font-bold"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}

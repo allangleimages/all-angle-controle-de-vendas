@@ -537,8 +537,8 @@ export const HomeView: React.FC = () => {
   }, [feeRules]);
 
   const finalBalance = useMemo(() => {
-    return grossRevenue - totalTeamCommissions - totalPartnerCommissions - totalAlboomTax - totalFixedReportFees;
-  }, [grossRevenue, totalTeamCommissions, totalPartnerCommissions, totalAlboomTax, totalFixedReportFees]);
+    return grossRevenue - totalTeamCommissions - totalPartnerCommissions;
+  }, [grossRevenue, totalTeamCommissions, totalPartnerCommissions]);
 
   // 3. REPASSES / PAYROLLS FOR LISTINGS
   const teamPayroll = useMemo(() => {
@@ -688,6 +688,44 @@ export const HomeView: React.FC = () => {
     };
   };
 
+  // Helper to calculate FixoMaisProgressivo pricing (Fixo por pessoa + Progressivo por foto extra)
+  const calculateFixoMaisProgressivoPrice = (pkg: Package, pplCount: number, qtySold: number): { subtotal: number; precoUnitarioUsed: number; extraSubtotal: number; extraUnitPrice: number } => {
+    const minPessoas = pkg.pessoasMinimas || 2;
+    const basePessoas = Math.max(minPessoas, pplCount);
+    const basePrice = basePessoas * (pkg.valorPorPessoa || 120);
+    const baseFotos = basePessoas * (pkg.fotosPorPessoa || 3);
+
+    const qtyExtra = Math.max(0, qtySold - baseFotos);
+    if (qtyExtra <= 0) {
+      return {
+        subtotal: basePrice,
+        precoUnitarioUsed: qtySold > 0 ? (basePrice / qtySold) : (basePessoas > 0 ? (basePrice / basePessoas) : 0),
+        extraSubtotal: 0,
+        extraUnitPrice: 0
+      };
+    }
+
+    let extraUnitPrice = 0;
+    if (pkg.tiers && pkg.tiers.length > 0) {
+      const firstTierMin = pkg.tiers[0].minFotos;
+      const lookupVal = firstTierMin >= baseFotos ? qtySold : qtyExtra;
+
+      const tier = pkg.tiers.find(t => lookupVal >= t.minFotos && lookupVal <= t.maxFotos)
+        || pkg.tiers[pkg.tiers.length - 1];
+      extraUnitPrice = tier ? tier.precoUnitario : 0;
+    }
+
+    const extraSubtotal = qtyExtra * extraUnitPrice;
+    const subtotal = basePrice + extraSubtotal;
+
+    return {
+      subtotal,
+      precoUnitarioUsed: qtySold > 0 ? (subtotal / qtySold) : 0,
+      extraSubtotal,
+      extraUnitPrice
+    };
+  };
+
   // Sum of photos from existing cart items to see starting index for the new chosen package
   const accumulatedPhotosInCart = useMemo(() => {
     return cartItems.reduce((acc, item) => {
@@ -738,6 +776,10 @@ export const HomeView: React.FC = () => {
         } else {
           return 0;
         }
+      } else if (currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+        const qty = parseInt(specialPhotoQty, 10) || 0;
+        const { subtotal } = calculateFixoMaisProgressivoPrice(currentSelectedPackage, formPeopleCount, qty);
+        return subtotal;
       } else {
         // Especial type (progressive pricing based on custom photo qty chosen)
         const qty = parseInt(specialPhotoQty, 10) || 0;
@@ -768,6 +810,9 @@ export const HomeView: React.FC = () => {
         } else {
           return 0;
         }
+      } else if (currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+        const { subtotal } = calculateFixoMaisProgressivoPrice(currentSelectedPackage, formPeopleCount, qtySold);
+        return subtotal;
       } else {
         // Especial type
         const { subtotal } = calculateEspecialPriceWithAccumulated(currentSelectedPackage, accumulatedPhotosInCart, qtySold);
@@ -825,6 +870,11 @@ export const HomeView: React.FC = () => {
             const qty = item.quantidadeFotos || 0;
             newSubtotal = (pkg.precoStandard || 0) * qty;
             newPrecoUnitario = pkg.precoStandard || 0;
+          } else if (pkg.tipoPreco === 'FixoMaisProgressivo') {
+            const qty = item.quantidadeFotos || 0;
+            const { subtotal, precoUnitarioUsed } = calculateFixoMaisProgressivoPrice(pkg, formPeopleCount, qty);
+            newSubtotal = subtotal;
+            newPrecoUnitario = precoUnitarioUsed;
           } else if (pkg.tipoPreco === 'Especial') {
             const qty = item.quantidadeFotos || 0;
             const { subtotal, precoUnitarioUsed } = calculateEspecialPriceWithAccumulated(pkg, runningAccumulatedPhotos, qty);
@@ -857,6 +907,10 @@ export const HomeView: React.FC = () => {
             } else if (pkg.tipoPreco === 'Foto') {
               newSubtotal = (pkg.precoStandard || 0) * qtySold;
               newPrecoUnitario = pkg.precoStandard || 0;
+            } else if (pkg.tipoPreco === 'FixoMaisProgressivo') {
+              const { subtotal, precoUnitarioUsed } = calculateFixoMaisProgressivoPrice(pkg, formPeopleCount, qtySold);
+              newSubtotal = subtotal;
+              newPrecoUnitario = precoUnitarioUsed;
             } else if (pkg.tipoPreco === 'Especial') {
               const { subtotal, precoUnitarioUsed } = calculateEspecialPriceWithAccumulated(pkg, runningAccumulatedPhotos, qtySold);
               newSubtotal = subtotal;
@@ -894,8 +948,17 @@ export const HomeView: React.FC = () => {
       const isVendaDireta = currentSelectedPackage.vendaDireta !== false;
       const isStandard = currentSelectedPackage.tipoPreco === 'Standard';
 
+      let defaultPessoas = formData.pessoas;
       let defaultVendidas = '';
-      if (isVendaDireta) {
+      let defaultEnviadas = '';
+
+      if (currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+        const minPessoas = currentSelectedPackage.pessoasMinimas || 2;
+        defaultPessoas = String(minPessoas);
+        const baseFotos = minPessoas * (currentSelectedPackage.fotosPorPessoa || 3);
+        defaultVendidas = String(baseFotos);
+        defaultEnviadas = String(baseFotos);
+      } else if (isVendaDireta) {
         if (isStandard && currentSelectedPackage.fotosPacote) {
           defaultVendidas = String(currentSelectedPackage.fotosPacote);
         } else if (currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
@@ -906,11 +969,11 @@ export const HomeView: React.FC = () => {
 
       setFormData(prev => {
         // Only update if they have actually changed to avoid loop.
-        // We keep fotosEnviadas completely empty/unfilled by default ("Sem número pré estabelecido de fotos enviadas")
-        if (prev.fotosVendidas !== defaultVendidas || prev.fotosEnviadas !== '') {
+        if (prev.pessoas !== defaultPessoas || prev.fotosVendidas !== defaultVendidas || prev.fotosEnviadas !== defaultEnviadas) {
           return {
             ...prev,
-            fotosEnviadas: '',
+            pessoas: defaultPessoas,
+            fotosEnviadas: defaultEnviadas,
             fotosVendidas: defaultVendidas
           };
         }
@@ -928,7 +991,7 @@ export const HomeView: React.FC = () => {
         return prev;
       });
     }
-  }, [selectedPackageId, currentSelectedPackage, formData.pessoas, isLaunchModalOpen, editingSale]);
+  }, [selectedPackageId, currentSelectedPackage, isLaunchModalOpen, editingSale]);
 
   const effectiveCartItems = useMemo(() => {
     if (!currentSelectedPackage) {
@@ -1376,9 +1439,9 @@ export const HomeView: React.FC = () => {
                   Alboom Pay
                 </button>
               </div>
-              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Comissões, Taxas & Descontos</p>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider leading-none">Comissões de Vendas (Equipe & Parceiros)</p>
               <h3 className="text-2xl font-black text-slate-900 mt-2.5 font-mono tracking-tight">
-                {formatCurrency(totalCommissions + totalAlboomTax + totalFixedReportFees)}
+                {formatCurrency(totalCommissions)}
               </h3>
               <div className="mt-3 space-y-1 bg-purple-50/40 p-2.5 rounded-2xl border border-purple-100/30 text-[10px] font-bold text-purple-900 font-sans">
                 <div className="flex justify-between">
@@ -1389,8 +1452,8 @@ export const HomeView: React.FC = () => {
                   <span>Parceiros & Indicações:</span>
                   <span className="font-mono">{formatCurrency(totalPartnerCommissions)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Taxas & Descontos:</span>
+                <div className="flex justify-between border-t border-purple-100/40 pt-1 mt-1 text-slate-500">
+                  <span>Taxas & Descontos (Apenas p/ Relatório):</span>
                   <span className="font-mono">{formatCurrency(totalAlboomTax + totalFixedReportFees)}</span>
                 </div>
               </div>
@@ -2333,7 +2396,18 @@ export const HomeView: React.FC = () => {
                       value={formData.pessoas}
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '');
-                        setFormData({ ...formData, pessoas: val });
+                        const parsedPpl = Math.max(1, parseInt(val, 10) || 1);
+                        if (currentSelectedPackage && currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+                          const baseFotos = parsedPpl * (currentSelectedPackage.fotosPorPessoa || 3);
+                          setFormData(prev => ({
+                            ...prev,
+                            pessoas: val,
+                            fotosVendidas: String(baseFotos),
+                            fotosEnviadas: String(baseFotos)
+                          }));
+                        } else {
+                          setFormData({ ...formData, pessoas: val });
+                        }
                       }}
                       className="w-full bg-white/5 border border-white/10 px-4 py-2 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 font-mono font-bold text-center mt-1"
                     />
@@ -2440,6 +2514,8 @@ export const HomeView: React.FC = () => {
                               ? `R$ ${rate} por foto`
                               : pkg.tipoPreco === 'ProgressivoPessoa'
                               ? `R$ ${pkg.precoPrimeiraPessoa ?? 0} (1ª) + R$ ${pkg.precoSegundaPessoa ?? 0} (2ª) + R$ ${pkg.precoAdicionalPessoa ?? 0}/adicional`
+                              : pkg.tipoPreco === 'FixoMaisProgressivo'
+                              ? `R$ ${pkg.valorPorPessoa ?? 0} por pessoa (mín. ${pkg.pessoasMinimas ?? 2} pessoas)`
                               : 'Preço Progressivo por Item';
                             return (
                               <option key={pkg.id} value={pkg.id}>{pkg.nomePacote} ({subLabel})</option>
@@ -2471,6 +2547,12 @@ export const HomeView: React.FC = () => {
                                 <p>Preço 1ª pessoa: <strong className="text-emerald-400">{formatCurrency(currentSelectedPackage.precoPrimeiraPessoa || 0)}</strong></p>
                                 <p>Preço 2ª pessoa: <strong className="text-emerald-400">{formatCurrency(currentSelectedPackage.precoSegundaPessoa ?? 0)}</strong></p>
                                 <p>Preço adicional (a partir da 3ª): <strong className="text-emerald-400">{formatCurrency(currentSelectedPackage.precoAdicionalPessoa || 0)}</strong></p>
+                              </>
+                            ) : currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo' ? (
+                              <>
+                                <p>Mínimo de pessoas: <strong className="text-emerald-400">{currentSelectedPackage.pessoasMinimas ?? 2} pessoas</strong></p>
+                                <p>Preço por pessoa: <strong className="text-emerald-400">{formatCurrency(currentSelectedPackage.valorPorPessoa || 0)}</strong></p>
+                                <p>Incluso por pessoa: <strong className="text-indigo-300">{currentSelectedPackage.fotosPorPessoa ?? 3} fotos</strong></p>
                               </>
                             ) : (
                               currentSelectedPackage.tipoPreco === 'Standard' && (
@@ -2891,6 +2973,19 @@ export const HomeView: React.FC = () => {
                               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                               <p className="text-[10px] text-amber-300 leading-relaxed font-bold normal-case text-left">
                                 Atenção: O número de fotos preenchido (<strong>{filledPhotos}</strong>) difere do número de fotos do pacote para {formPeopleCount} {formPeopleCount === 1 ? 'pessoa' : 'pessoas'} (esperado: <strong>{expectedPhotos}</strong> fotos).
+                              </p>
+                            </div>
+                          );
+                        }
+                      } else if (currentSelectedPackage && currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+                        const expectedPhotos = (currentSelectedPackage.fotosPorPessoa || 3) * formPeopleCount;
+                        const filledPhotos = parseInt(formData.fotosVendidas, 10) || 0;
+                        if (filledPhotos < expectedPhotos) {
+                          return (
+                            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2.5 mt-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <p className="text-[10px] text-amber-300 leading-relaxed font-bold normal-case text-left">
+                                Atenção: O número de fotos preenchido (<strong>{filledPhotos}</strong>) é inferior ao mínimo previsto de <strong>{expectedPhotos}</strong> fotos para {formPeopleCount} {formPeopleCount === 1 ? 'pessoa' : 'pessoas'}.
                               </p>
                             </div>
                           );

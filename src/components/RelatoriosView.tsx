@@ -940,7 +940,7 @@ export const RelatoriosView: React.FC = () => {
 
     paidSales.forEach(sale => {
       const taxes = calculateSaleTaxes(sale, feeRules);
-      totalAlboomTax += taxes.totalTax;
+      totalAlboomTax += taxes.companyTax;
       grossRevenue += getSaleGross(sale);
       
       const discount = sale.descontoManual || 0;

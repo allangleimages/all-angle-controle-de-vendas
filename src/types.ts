@@ -101,7 +101,7 @@ export interface Package {
   id: string;
   atividadeId: string; // Activity relation
   nomePacote: string;
-  tipoPreco: 'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa';
+  tipoPreco: 'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo';
   precoStandard?: number; // Price per person for standard or price per photo for 'Foto'
   precoFoto?: number; // Price per single photo for 'Foto' if isolated
   fotosPacote?: number; // Number of photos included in package
@@ -112,6 +112,9 @@ export interface Package {
   precoPrimeiraPessoa?: number; // For ProgressivoPessoa
   precoSegundaPessoa?: number; // For ProgressivoPessoa
   precoAdicionalPessoa?: number; // For ProgressivoPessoa
+  pessoasMinimas?: number; // For FixoMaisProgressivo
+  valorPorPessoa?: number; // For FixoMaisProgressivo
+  fotosPorPessoa?: number; // For FixoMaisProgressivo
   vendaDireta?: boolean; // True = Venda direta, False = Depende da seleção do cliente
   incluirMetricaFotos?: boolean; // Include in photos metrics
   mensagemAbandono?: string; // Abandoned cart WhatsApp message template custom per package
