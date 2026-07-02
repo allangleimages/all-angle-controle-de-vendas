@@ -5,6 +5,15 @@ import { Plus, Trash2, Tag, Layers, Settings, FileSpreadsheet, EyeOff, Clipboard
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 
+const formatCurrencyPrecise = (val: number | undefined | null): string => {
+  if (val === undefined || val === null) return 'R$ 0,00';
+  const formatted = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 8
+  }).format(val);
+  return `R$ ${formatted}`;
+};
+
 export const ValoresPacotesView: React.FC = () => {
   const { currentUser, packages, activities, addPackage, updatePackage, archivePackage, partners, sales, deletePackage } = useApp();
   const isAdmin = currentUser.cargo === 'Admin';
@@ -190,8 +199,7 @@ export const ValoresPacotesView: React.FC = () => {
   };
 
   const handleUpdateTierPrice = (index: number, priceText: string) => {
-    const val = parseFloat(priceText) || 0;
-    setTiers(prev => prev.map((t, i) => i === index ? { ...t, precoUnitario: val } : t));
+    setTiers(prev => prev.map((t, i) => i === index ? { ...t, precoUnitario: priceText as any } : t));
   };
 
   const handleAddTierRow = () => {
@@ -215,6 +223,12 @@ export const ValoresPacotesView: React.FC = () => {
     e.preventDefault();
     setError(null);
 
+    const parseFormattedFloat = (val: string): number => {
+      if (!val) return 0;
+      const normalized = val.replace(',', '.');
+      return parseFloat(normalized);
+    };
+
     try {
       // 1. Mandatory Fields Validation
       if (!nomePacote.trim()) {
@@ -228,7 +242,7 @@ export const ValoresPacotesView: React.FC = () => {
 
       // 2. Specific Pricing Rule Validation
       if (tipoPreco === 'Standard') {
-        if (!precoStandard || isNaN(parseFloat(precoStandard))) {
+        if (!precoStandard || isNaN(parseFormattedFloat(precoStandard))) {
           setError('Por favor, informe um preço por bilhete válido!');
           return;
         }
@@ -241,20 +255,20 @@ export const ValoresPacotesView: React.FC = () => {
           return;
         }
       } else if (tipoPreco === 'Foto') {
-        if (!precoStandard || isNaN(parseFloat(precoStandard))) {
+        if (!precoStandard || isNaN(parseFormattedFloat(precoStandard))) {
           setError('Por favor, informe um valor unitário por foto válido!');
           return;
         }
       } else if (tipoPreco === 'ProgressivoPessoa') {
-        if (!precoPrimeiraPessoa || isNaN(parseFloat(precoPrimeiraPessoa))) {
+        if (!precoPrimeiraPessoa || isNaN(parseFormattedFloat(precoPrimeiraPessoa))) {
           setError('Por favor, informe o valor da 1ª pessoa corretamente!');
           return;
         }
-        if (precoSegundaPessoa !== '' && isNaN(parseFloat(precoSegundaPessoa))) {
+        if (precoSegundaPessoa !== '' && isNaN(parseFormattedFloat(precoSegundaPessoa))) {
           setError('Por favor, informe o valor da 2ª pessoa corretamente!');
           return;
         }
-        if (!precoAdicionalPessoa || isNaN(parseFloat(precoAdicionalPessoa))) {
+        if (!precoAdicionalPessoa || isNaN(parseFormattedFloat(precoAdicionalPessoa))) {
           setError('Por favor, informe o valor adicional a partir da 3ª pessoa e diante!');
           return;
         }
@@ -267,7 +281,7 @@ export const ValoresPacotesView: React.FC = () => {
           const t = tiers[i];
           if (t.minFotos === undefined || t.minFotos === null || isNaN(Number(t.minFotos)) ||
               t.maxFotos === undefined || t.maxFotos === null || isNaN(Number(t.maxFotos)) ||
-              t.precoUnitario === undefined || t.precoUnitario === null || isNaN(Number(t.precoUnitario))) {
+              t.precoUnitario === undefined || t.precoUnitario === null || isNaN(parseFormattedFloat(t.precoUnitario.toString()))) {
             setError(`Por favor, preencha corretamente todas as faixas do preço progressivo (Faixa ${i + 1})!`);
             return;
           }
@@ -277,7 +291,7 @@ export const ValoresPacotesView: React.FC = () => {
           setError('Por favor, informe a quantidade mínima de pessoas!');
           return;
         }
-        if (!valorPorPessoa || isNaN(parseFloat(valorPorPessoa))) {
+        if (!valorPorPessoa || isNaN(parseFormattedFloat(valorPorPessoa))) {
           setError('Por favor, informe o valor por pessoa!');
           return;
         }
@@ -293,7 +307,7 @@ export const ValoresPacotesView: React.FC = () => {
           const t = tiers[i];
           if (t.minFotos === undefined || t.minFotos === null || isNaN(Number(t.minFotos)) ||
               t.maxFotos === undefined || t.maxFotos === null || isNaN(Number(t.maxFotos)) ||
-              t.precoUnitario === undefined || t.precoUnitario === null || isNaN(Number(t.precoUnitario))) {
+              t.precoUnitario === undefined || t.precoUnitario === null || isNaN(parseFormattedFloat(t.precoUnitario.toString()))) {
             setError(`Por favor, preencha corretamente todas as faixas do preço progressivo (Faixa ${i + 1})!`);
             return;
           }
@@ -323,19 +337,22 @@ export const ValoresPacotesView: React.FC = () => {
       // If locked by active operational history, do not mutate financial metrics
       if (!hasHistory) {
         payload.tipoPreco = tipoPreco;
-        payload.precoStandard = (tipoPreco === 'Standard' || tipoPreco === 'Foto') ? parseFloat(precoStandard) || 0 : undefined;
+        payload.precoStandard = (tipoPreco === 'Standard' || tipoPreco === 'Foto') ? parseFormattedFloat(precoStandard) || 0 : undefined;
         payload.fotosPacote = tipoPreco === 'Standard' ? parseInt(fotosPacote, 10) || 0 : undefined;
         payload.maxFotosEnviadas = tipoPreco === 'Standard' ? parseInt(maxFotosEnviadas, 10) || 0 : undefined;
         payload.possuiLimiteFotosPorPessoa = possuiLimiteFotosPorPessoa;
         payload.limiteFotosPorPessoa = possuiLimiteFotosPorPessoa ? parseInt(limiteFotosPorPessoa, 10) || 0 : undefined;
-        payload.tiers = (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers : undefined;
+        payload.tiers = (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers.map(t => ({
+          ...t,
+          precoUnitario: parseFormattedFloat(t.precoUnitario.toString()) || 0
+        })) : undefined;
         payload.vendaDireta = vendaDireta;
         payload.incluirMetricaFotos = incluirMetricaFotos;
-        payload.precoPrimeiraPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoPrimeiraPessoa) || 0 : undefined;
-        payload.precoSegundaPessoa = tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFloat(precoSegundaPessoa)) : undefined;
-        payload.precoAdicionalPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoAdicionalPessoa) || 0 : undefined;
+        payload.precoPrimeiraPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFormattedFloat(precoPrimeiraPessoa) || 0 : undefined;
+        payload.precoSegundaPessoa = tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFormattedFloat(precoSegundaPessoa)) : undefined;
+        payload.precoAdicionalPessoa = tipoPreco === 'ProgressivoPessoa' ? parseFormattedFloat(precoAdicionalPessoa) || 0 : undefined;
         payload.pessoasMinimas = tipoPreco === 'FixoMaisProgressivo' ? parseInt(pessoasMinimas, 10) || 0 : undefined;
-        payload.valorPorPessoa = tipoPreco === 'FixoMaisProgressivo' ? parseFloat(valorPorPessoa) || 0 : undefined;
+        payload.valorPorPessoa = tipoPreco === 'FixoMaisProgressivo' ? parseFormattedFloat(valorPorPessoa) || 0 : undefined;
         payload.fotosPorPessoa = tipoPreco === 'FixoMaisProgressivo' ? parseInt(fotosPorPessoa, 10) || 0 : undefined;
       }
 
@@ -346,17 +363,20 @@ export const ValoresPacotesView: React.FC = () => {
           atividadeId,
           nomePacote: nomePacote.trim(),
           tipoPreco,
-          precoStandard: (tipoPreco === 'Standard' || tipoPreco === 'Foto') ? parseFloat(precoStandard) || 0 : undefined,
+          precoStandard: (tipoPreco === 'Standard' || tipoPreco === 'Foto') ? parseFormattedFloat(precoStandard) || 0 : undefined,
           fotosPacote: tipoPreco === 'Standard' ? parseInt(fotosPacote, 10) || 0 : undefined,
           maxFotosEnviadas: tipoPreco === 'Standard' ? parseInt(maxFotosEnviadas, 10) || 0 : undefined,
           possuiLimiteFotosPorPessoa,
           limiteFotosPorPessoa: possuiLimiteFotosPorPessoa ? parseInt(limiteFotosPorPessoa, 10) || 0 : undefined,
-          tiers: (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers : undefined,
-          precoPrimeiraPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoPrimeiraPessoa) || 0 : undefined,
-          precoSegundaPessoa: tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFloat(precoSegundaPessoa)) : undefined,
-          precoAdicionalPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFloat(precoAdicionalPessoa) || 0 : undefined,
+          tiers: (tipoPreco === 'Especial' || tipoPreco === 'FixoMaisProgressivo') ? tiers.map(t => ({
+            ...t,
+            precoUnitario: parseFormattedFloat(t.precoUnitario.toString()) || 0
+          })) : undefined,
+          precoPrimeiraPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFormattedFloat(precoPrimeiraPessoa) || 0 : undefined,
+          precoSegundaPessoa: tipoPreco === 'ProgressivoPessoa' ? (precoSegundaPessoa === '' ? 0 : parseFormattedFloat(precoSegundaPessoa)) : undefined,
+          precoAdicionalPessoa: tipoPreco === 'ProgressivoPessoa' ? parseFormattedFloat(precoAdicionalPessoa) || 0 : undefined,
           pessoasMinimas: tipoPreco === 'FixoMaisProgressivo' ? parseInt(pessoasMinimas, 10) || 0 : undefined,
-          valorPorPessoa: tipoPreco === 'FixoMaisProgressivo' ? parseFloat(valorPorPessoa) || 0 : undefined,
+          valorPorPessoa: tipoPreco === 'FixoMaisProgressivo' ? parseFormattedFloat(valorPorPessoa) || 0 : undefined,
           fotosPorPessoa: tipoPreco === 'FixoMaisProgressivo' ? parseInt(fotosPorPessoa, 10) || 0 : undefined,
           vendaDireta,
           incluirMetricaFotos,
@@ -485,7 +505,7 @@ export const ValoresPacotesView: React.FC = () => {
                       {pkg.tipoPreco === 'Standard' && (
                         <div>
                           <h3 className="text-2xl font-black text-slate-900 font-mono">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.precoStandard || 0)}
+                            {formatCurrencyPrecise(pkg.precoStandard || 0)}
                           </h3>
                           <span className="text-[9px] text-[#0e2438] uppercase font-black tracking-wider block mt-1 bg-[#0e2438]/5 py-0.5 rounded">Cobrança Por Integrante Único</span>
                         </div>
@@ -493,7 +513,7 @@ export const ValoresPacotesView: React.FC = () => {
                       {pkg.tipoPreco === 'Foto' && (
                         <div>
                           <h3 className="text-2xl font-black text-slate-900 font-mono">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.precoStandard || 0)}
+                            {formatCurrencyPrecise(pkg.precoStandard || 0)}
                           </h3>
                           <span className="text-[9px] text-blue-800 uppercase font-black tracking-wider block mt-1 bg-blue-50 py-0.5 rounded">Cobrado Individualmente por Foto Extra</span>
                         </div>
@@ -511,17 +531,17 @@ export const ValoresPacotesView: React.FC = () => {
                       {pkg.tipoPreco === 'ProgressivoPessoa' && (
                         <div className="space-y-0.5 font-bold">
                           <h3 className="text-sm font-black text-amber-700 font-mono leading-none">
-                            1ª: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.precoPrimeiraPessoa || 0)} • 2ª: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.precoSegundaPessoa ?? 0)}
+                            1ª: {formatCurrencyPrecise(pkg.precoPrimeiraPessoa || 0)} • 2ª: {formatCurrencyPrecise(pkg.precoSegundaPessoa ?? 0)}
                           </h3>
                           <span className="text-[9px] text-amber-900 uppercase font-bold tracking-wider block mt-1 bg-amber-50 py-0.5 rounded">
-                            + {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.precoAdicionalPessoa || 0)} / adicional (a partir da 3ª)
+                            + {formatCurrencyPrecise(pkg.precoAdicionalPessoa || 0)} / adicional (a partir da 3ª)
                           </span>
                         </div>
                       )}
                       {pkg.tipoPreco === 'FixoMaisProgressivo' && (
                         <div className="space-y-0.5 font-bold">
                           <h3 className="text-sm font-black text-pink-700 font-mono leading-none">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pkg.valorPorPessoa || 0)} por pessoa
+                            {formatCurrencyPrecise(pkg.valorPorPessoa || 0)} por pessoa
                           </h3>
                           <span className="text-[9px] text-pink-900 uppercase font-bold tracking-wider block mt-1 bg-pink-50 py-0.5 rounded">
                             {pkg.fotosPorPessoa} fotos/pessoa inclusas • Mín: {pkg.pessoasMinimas} pessoas
@@ -704,7 +724,7 @@ export const ValoresPacotesView: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Valor por Bilhete/Pessoa:</span>
-                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.precoStandard?.toFixed(2)}</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.precoStandard)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium font-bold">Fotos Cortesia/Inclusas:</span>
@@ -725,7 +745,7 @@ export const ValoresPacotesView: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Valor por Unidade Vendida:</span>
-                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.precoStandard?.toFixed(2)} / foto unitária</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.precoStandard)} / foto unitária</span>
                       </div>
                       <div className="flex justify-between text-slate-500 text-[10px]">
                         <span>Regra Real-Time fotográfica:</span>
@@ -745,7 +765,7 @@ export const ValoresPacotesView: React.FC = () => {
                         {renderedSelectedPackage.tiers?.map((tier, idx) => (
                            <div key={idx} className="flex justify-between py-1.5 first:pt-0 last:pb-0 text-slate-700">
                              <span className="font-bold">De {tier.minFotos} a {tier.maxFotos} fotos vendidas:</span>
-                             <span className="font-bold text-indigo-600">R$ {tier.precoUnitario.toFixed(2)} / unidade</span>
+                             <span className="font-bold text-indigo-600">{formatCurrencyPrecise(tier.precoUnitario)} / unidade</span>
                            </div>
                         ))}
                       </div>
@@ -760,15 +780,15 @@ export const ValoresPacotesView: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Valor da 1ª Pessoa:</span>
-                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.precoPrimeiraPessoa?.toFixed(2)}</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.precoPrimeiraPessoa)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Valor da 2ª Pessoa:</span>
-                        <span className="font-bold text-slate-900">R$ {(renderedSelectedPackage.precoSegundaPessoa ?? 0).toFixed(2)}</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.precoSegundaPessoa ?? 0)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium font-bold">Valor Adicional (3ª pessoa em diante):</span>
-                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.precoAdicionalPessoa?.toFixed(2)}</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.precoAdicionalPessoa)}</span>
                       </div>
                     </div>
                   )}
@@ -785,7 +805,7 @@ export const ValoresPacotesView: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Valor por Pessoa:</span>
-                        <span className="font-bold text-slate-900">R$ {renderedSelectedPackage.valorPorPessoa?.toFixed(2)}</span>
+                        <span className="font-bold text-slate-900">{formatCurrencyPrecise(renderedSelectedPackage.valorPorPessoa)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Fotos por Pessoa Inclusas:</span>
@@ -796,7 +816,7 @@ export const ValoresPacotesView: React.FC = () => {
                         {renderedSelectedPackage.tiers?.map((tier, idx) => (
                            <div key={idx} className="flex justify-between py-1.5 first:pt-0 last:pb-0 text-slate-700">
                              <span className="font-semibold">De {tier.minFotos} a {tier.maxFotos} fotos extras:</span>
-                             <span className="font-bold text-pink-600">R$ {tier.precoUnitario.toFixed(2)} / unidade</span>
+                             <span className="font-bold text-pink-600">{formatCurrencyPrecise(tier.precoUnitario)} / unidade</span>
                            </div>
                         ))}
                       </div>
@@ -1146,7 +1166,7 @@ export const ValoresPacotesView: React.FC = () => {
                               type="text"
                               placeholder="e.g. 200"
                               value={precoStandard}
-                              onChange={(e) => setPrecoStandard(e.target.value.replace(/[^0-9.]/g, ''))}
+                              onChange={(e) => setPrecoStandard(e.target.value.replace(/[^0-9.,]/g, ''))}
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-white/5 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                             />
@@ -1186,7 +1206,7 @@ export const ValoresPacotesView: React.FC = () => {
                               type="text"
                               placeholder="e.g. 15.00"
                               value={precoStandard}
-                              onChange={(e) => setPrecoStandard(e.target.value.replace(/[^0-9.]/g, ''))}
+                              onChange={(e) => setPrecoStandard(e.target.value.replace(/[^0-9.,]/g, ''))}
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-white/5 p-4 border border-white/10 rounded-xl font-bold font-mono text-white text-xs focus:outline-none focus:border-white/20"
                             />
@@ -1235,7 +1255,7 @@ export const ValoresPacotesView: React.FC = () => {
                                   <input
                                     type="text"
                                     value={tier.precoUnitario}
-                                    onChange={(e) => handleUpdateTierPrice(index, e.target.value.replace(/[^0-9.]/g, ''))}
+                                    onChange={(e) => handleUpdateTierPrice(index, e.target.value.replace(/[^0-9.,]/g, ''))}
                                     disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                                     className="w-24 p-2 bg-slate-950 border border-white/10 text-white text-center rounded focus:outline-none font-extrabold font-mono text-xs"
                                   />
@@ -1263,7 +1283,7 @@ export const ValoresPacotesView: React.FC = () => {
                               type="text"
                               placeholder="e.g. 800"
                               value={precoPrimeiraPessoa}
-                              onChange={(e) => setPrecoPrimeiraPessoa(e.target.value.replace(/[^0-9.]/g, ''))}
+                              onChange={(e) => setPrecoPrimeiraPessoa(e.target.value.replace(/[^0-9.,]/g, ''))}
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                             />
@@ -1275,7 +1295,7 @@ export const ValoresPacotesView: React.FC = () => {
                               type="text"
                               placeholder="e.g. 0"
                               value={precoSegundaPessoa}
-                              onChange={(e) => setPrecoSegundaPessoa(e.target.value.replace(/[^0-9.]/g, ''))}
+                              onChange={(e) => setPrecoSegundaPessoa(e.target.value.replace(/[^0-9.,]/g, ''))}
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                             />
@@ -1287,7 +1307,7 @@ export const ValoresPacotesView: React.FC = () => {
                               type="text"
                               placeholder="e.g. 200"
                               value={precoAdicionalPessoa}
-                              onChange={(e) => setPrecoAdicionalPessoa(e.target.value.replace(/[^0-9.]/g, ''))}
+                              onChange={(e) => setPrecoAdicionalPessoa(e.target.value.replace(/[^0-9.,]/g, ''))}
                               disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                               className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                             />
@@ -1315,7 +1335,7 @@ export const ValoresPacotesView: React.FC = () => {
                                 type="text"
                                 placeholder="e.g. 120"
                                 value={valorPorPessoa}
-                                onChange={(e) => setValorPorPessoa(e.target.value.replace(/[^0-9.]/g, ''))}
+                                onChange={(e) => setValorPorPessoa(e.target.value.replace(/[^0-9.,]/g, ''))}
                                 disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                                 className="w-full bg-slate-950 p-3.5 border border-white/10 rounded-xl font-bold font-mono text-center text-white focus:outline-none focus:border-white/20"
                               />
@@ -1373,7 +1393,7 @@ export const ValoresPacotesView: React.FC = () => {
                                     <input
                                       type="text"
                                       value={tier.precoUnitario}
-                                      onChange={(e) => handleUpdateTierPrice(index, e.target.value.replace(/[^0-9.]/g, ''))}
+                                      onChange={(e) => handleUpdateTierPrice(index, e.target.value.replace(/[^0-9.,]/g, ''))}
                                       disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
                                       className="w-24 p-2 bg-slate-950 border border-white/10 text-white text-center rounded focus:outline-none font-extrabold font-mono text-xs"
                                     />
