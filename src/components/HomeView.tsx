@@ -171,10 +171,13 @@ export const HomeView: React.FC = () => {
     }
   }, [isLaunchModalOpen, editingSale, activities, currentUser, isAdmin]);
 
-  // Reset overrideLaunchDate when modal closes
+  // Reset overrideLaunchDate and other modal inputs when modal closes
   useEffect(() => {
     if (!isLaunchModalOpen) {
       setOverrideLaunchDate(null);
+      setSelectedPackageId('');
+      setSpecialPhotoQty('');
+      setCartItems([]);
     }
   }, [isLaunchModalOpen]);
 
@@ -233,6 +236,17 @@ export const HomeView: React.FC = () => {
       notas: sale.notas || ''
     });
     setCartItems(sale.sacolaItens || []);
+
+    const firstItem = sale.sacolaItens?.[0];
+    const pkgId = firstItem?.pacoteId || '';
+    setSelectedPackageId(pkgId);
+
+    const pkg = packages.find(p => p.id === pkgId);
+    if (pkg && (pkg.tipoPreco === 'Especial' || pkg.tipoPreco === 'Foto' || pkg.tipoPreco === 'FixoMaisProgressivo')) {
+      setSpecialPhotoQty(String(firstItem?.quantidadeFotos || ''));
+    } else {
+      setSpecialPhotoQty('');
+    }
     
     // Load existing multiple payments if available
     if (sale.pagamentos && sale.pagamentos.length > 0) {
@@ -836,16 +850,23 @@ export const HomeView: React.FC = () => {
         let newSubtotal = item.subtotal;
         let newPrecoUnitario = item.precoUnitario;
 
+        // If the package is NOT vendaDireta (dependent on selection), its quantity of photos
+        // must always match the form's fotosVendidas!
+        let targetQty = item.quantidadeFotos;
+        if (!isVendaDireta) {
+          targetQty = parseInt(formData.fotosVendidas, 10) || 0;
+        }
+
         // Determine how many photos this item contributes to the progressive path for the next ones
         let itemPhotos = 0;
         if (isVendaDireta) {
           if (pkg.fotosPacote !== undefined && pkg.fotosPacote > 0) {
             itemPhotos = pkg.fotosPacote;
           } else {
-            itemPhotos = item.quantidadeFotos || 0;
+            itemPhotos = targetQty || 0;
           }
         } else {
-          itemPhotos = item.quantidadeFotos || 0;
+          itemPhotos = targetQty || 0;
         }
 
         if (isVendaDireta) {
@@ -867,22 +888,22 @@ export const HomeView: React.FC = () => {
             }
             newPrecoUnitario = formPeopleCount > 0 ? (newSubtotal / formPeopleCount) : 0;
           } else if (pkg.tipoPreco === 'Foto') {
-            const qty = item.quantidadeFotos || 0;
+            const qty = targetQty || 0;
             newSubtotal = (pkg.precoStandard || 0) * qty;
             newPrecoUnitario = pkg.precoStandard || 0;
           } else if (pkg.tipoPreco === 'FixoMaisProgressivo') {
-            const qty = item.quantidadeFotos || 0;
+            const qty = targetQty || 0;
             const { subtotal, precoUnitarioUsed } = calculateFixoMaisProgressivoPrice(pkg, formPeopleCount, qty);
             newSubtotal = subtotal;
             newPrecoUnitario = precoUnitarioUsed;
           } else if (pkg.tipoPreco === 'Especial') {
-            const qty = item.quantidadeFotos || 0;
+            const qty = targetQty || 0;
             const { subtotal, precoUnitarioUsed } = calculateEspecialPriceWithAccumulated(pkg, runningAccumulatedPhotos, qty);
             newSubtotal = subtotal;
             newPrecoUnitario = precoUnitarioUsed;
           }
         } else {
-          const qtySold = item.quantidadeFotos || 0;
+          const qtySold = targetQty || 0;
           if (qtySold <= 0) {
             newSubtotal = 0;
             newPrecoUnitario = 0;
@@ -922,8 +943,6 @@ export const HomeView: React.FC = () => {
         // Add to running accumulated total for subsequent items
         runningAccumulatedPhotos += itemPhotos;
 
-        const targetQty = item.quantidadeFotos;
-
         if (item.subtotal !== newSubtotal || item.precoUnitario !== newPrecoUnitario || item.quantidadeFotos !== targetQty) {
           isChanged = true;
           return {
@@ -938,7 +957,7 @@ export const HomeView: React.FC = () => {
 
       return isChanged ? updated : prevItems;
     });
-  }, [formData.pessoas, packages, formPeopleCount]);
+  }, [formData.pessoas, packages, formPeopleCount, formData.fotosVendidas]);
 
   // Handle initializing or adjusting photo metrics based on the selected package's registered attributes
   useEffect(() => {
@@ -957,7 +976,7 @@ export const HomeView: React.FC = () => {
         defaultPessoas = String(minPessoas);
         const baseFotos = minPessoas * (currentSelectedPackage.fotosPorPessoa || 3);
         defaultVendidas = String(baseFotos);
-        defaultEnviadas = String(baseFotos);
+        defaultEnviadas = '';
       } else if (isVendaDireta) {
         if (isStandard && currentSelectedPackage.fotosPacote) {
           defaultVendidas = String(currentSelectedPackage.fotosPacote);
@@ -2403,7 +2422,7 @@ export const HomeView: React.FC = () => {
                             ...prev,
                             pessoas: val,
                             fotosVendidas: String(baseFotos),
-                            fotosEnviadas: String(baseFotos)
+                            fotosEnviadas: prev.fotosEnviadas
                           }));
                         } else {
                           setFormData({ ...formData, pessoas: val });
@@ -2505,7 +2524,7 @@ export const HomeView: React.FC = () => {
                       >
                         <option value="">Selecione o pacote associado...</option>
                         {packages
-                          .filter(pkg => pkg.atividadeId === formData.atividadeId && !pkg.arquivado)
+                          .filter(pkg => (pkg.atividadeId === formData.atividadeId && !pkg.arquivado) || pkg.id === selectedPackageId)
                           .map(pkg => {
                             const rate = pkg.precoStandard ?? (pkg as any).precoBase ?? 0;
                             const subLabel = pkg.tipoPreco === 'Standard' 
