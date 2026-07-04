@@ -773,7 +773,8 @@ export const RelatoriosView: React.FC = () => {
       const monthSales = sales.filter(sale => {
         if (sale.status === 'Archived') return false;
         
-        const dateParts = sale.data.split('-');
+        const refDate = (sale.status === 'Pago' && sale.dataPagamento) ? sale.dataPagamento : sale.data;
+        const dateParts = refDate.split('-');
         if (dateParts.length < 3) return false;
         const yr = parseInt(dateParts[0], 10);
         const mo = parseInt(dateParts[1], 10);

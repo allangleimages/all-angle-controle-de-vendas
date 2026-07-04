@@ -90,7 +90,8 @@ export const HomeView: React.FC = () => {
     fotosEnviadas: '',
     fotosVendidas: '',
     descontoManual: '',
-    notas: ''
+    notas: '',
+    dataPagamento: ''
   });
 
   // Shopping cart items inside the Launch Modal
@@ -144,8 +145,9 @@ export const HomeView: React.FC = () => {
   useEffect(() => {
     if (isLaunchModalOpen && !editingSale) {
       const todayStr = new Date().toISOString().split('T')[0];
+      const defaultDate = overrideLaunchDate || todayStr;
       setFormData({
-        data: overrideLaunchDate || todayStr,
+        data: defaultDate,
         nomeCliente: '',
         whatsapp: '',
         email: '',
@@ -159,7 +161,8 @@ export const HomeView: React.FC = () => {
         fotosEnviadas: '',
         fotosVendidas: '',
         descontoManual: '',
-        notas: ''
+        notas: '',
+        dataPagamento: defaultDate
       });
       setCartItems([]);
       setSelectedPackageId('');
@@ -236,7 +239,8 @@ export const HomeView: React.FC = () => {
       fotosEnviadas: !sale.fotosEnviadas ? '' : String(sale.fotosEnviadas),
       fotosVendidas: !sale.fotosVendidas ? '' : String(sale.fotosVendidas),
       descontoManual: !sale.descontoManual ? '' : String(sale.descontoManual),
-      notas: sale.notas || ''
+      notas: sale.notas || '',
+      dataPagamento: sale.dataPagamento || sale.data
     });
     setCartItems(sale.sacolaItens || []);
 
@@ -373,26 +377,20 @@ export const HomeView: React.FC = () => {
     });
   }, [sales, isAdmin, currentUser.id, selectedActivityId, searchTerm]);
 
-  // Block 1: Carryovers (Past month's non-closed items rolling forward, or items paid in the current selected period)
+  // Block 1: Carryovers (Past month's non-closed/unresolved items rolling forward)
   const carryoverSales = useMemo(() => {
     return filteredSalesData.filter(sale => {
+      // Must be unresolved
+      const isUnresolved = sale.status === 'Pendente' || sale.status === 'Abandonada';
+      if (!isUnresolved) return false;
+
       // It belongs to a previous month relative to filter
       const salePeriod = sale.data.substring(0, 7);
       const isPastMonth = isAnnualView 
         ? sale.data < `${selectedYear}-01-01`
         : salePeriod < selectedPeriodStr;
       
-      if (!isPastMonth) return false;
-
-      const isUnresolved = sale.status === 'Pendente' || sale.status === 'Abandonada';
-      
-      const isPaidInCurrentPeriod = sale.status === 'Pago' && sale.dataPagamento && (
-        isAnnualView 
-          ? sale.dataPagamento.startsWith(`${selectedYear}-`)
-          : sale.dataPagamento.startsWith(selectedPeriodStr)
-      );
-
-      return isUnresolved || isPaidInCurrentPeriod;
+      return isPastMonth;
     }).sort((a, b) => b.data.localeCompare(a.data));
   }, [filteredSalesData, selectedPeriodStr, selectedYear, isAnnualView]);
 
@@ -422,7 +420,7 @@ export const HomeView: React.FC = () => {
         return {
           key,
           isCarryover: true,
-          label: `Pendentes de ${monthName} de ${yr}`,
+          label: `Lançamentos de ${monthName} de ${yr}`,
           sales: groups[key]
         };
       });
@@ -431,38 +429,43 @@ export const HomeView: React.FC = () => {
   // Block 2: Month Chronological Services
   const activeMonthSales = useMemo(() => {
     return filteredSalesData.filter(sale => {
-      const salePeriod = sale.data.substring(0, 7);
-      const inCurrentPeriod = isAnnualView 
-        ? sale.data.startsWith(`${selectedYear}-`)
-        : salePeriod === selectedPeriodStr;
+      const refDate = (sale.status === 'Pago' && sale.dataPagamento) ? sale.dataPagamento : sale.data;
+      const refPeriod = refDate.substring(0, 7);
 
-      // Filter out past month items that are already pinned in Block 1
-      const isPastMonth = isAnnualView
+      const inCurrentPeriod = isAnnualView 
+        ? refDate.startsWith(`${selectedYear}-`)
+        : refPeriod === selectedPeriodStr;
+
+      if (!inCurrentPeriod) return false;
+
+      // If it is an unresolved past-month sale, it goes to Block 1 (Carryover), not here
+      const salePeriod = sale.data.substring(0, 7);
+      const isPastMonthLaunch = isAnnualView
         ? sale.data < `${selectedYear}-01-01`
         : salePeriod < selectedPeriodStr;
-      
       const isUnresolved = sale.status === 'Pendente' || sale.status === 'Abandonada';
-      const isPaidInCurrentPeriod = sale.status === 'Pago' && sale.dataPagamento && (
-        isAnnualView 
-          ? sale.dataPagamento.startsWith(`${selectedYear}-`)
-          : sale.dataPagamento.startsWith(selectedPeriodStr)
-      );
 
-      const isPinnablePast = isPastMonth && (isUnresolved || isPaidInCurrentPeriod);
+      if (isPastMonthLaunch && isUnresolved) {
+        return false;
+      }
 
-      return inCurrentPeriod && !isPinnablePast;
-    }).sort((a, b) => b.data.localeCompare(a.data) || b.createdAt.localeCompare(a.createdAt));
+      return true;
+    }).sort((a, b) => {
+      const refA = (a.status === 'Pago' && a.dataPagamento) ? a.dataPagamento : a.data;
+      const refB = (b.status === 'Pago' && b.dataPagamento) ? b.dataPagamento : b.data;
+      return refB.localeCompare(refA) || b.createdAt.localeCompare(a.createdAt);
+    });
   }, [filteredSalesData, selectedPeriodStr, selectedYear, isAnnualView]);
 
-  // Group current active month's sales by date
+  // Group current active month's sales by date (using refDate so paid sales appear on their payment date)
   const activeMonthSalesGrouped = useMemo(() => {
     const groups: Record<string, Sale[]> = {};
     activeMonthSales.forEach(s => {
-      const d = s.data;
-      if (!groups[d]) {
-        groups[d] = [];
+      const refDate = (s.status === 'Pago' && s.dataPagamento) ? s.dataPagamento : s.data;
+      if (!groups[refDate]) {
+        groups[refDate] = [];
       }
-      groups[d].push(s);
+      groups[refDate].push(s);
     });
 
     return Object.keys(groups)
@@ -548,19 +551,24 @@ export const HomeView: React.FC = () => {
     return paidSalesInPeriod.reduce((acc, s) => {
       const act = activities.find(a => a.id === s.atividadeId);
       const rawComm = calculateCollaboratorCommission(s, currentUser, act);
-      return acc + rawComm;
+      const taxes = calculateSaleTaxes(s, feeRules);
+      const finalComm = Math.max(0, rawComm - taxes.teamTax);
+      return acc + finalComm;
     }, 0);
-  }, [paidSalesInPeriod, activities, currentUser]);
+  }, [paidSalesInPeriod, activities, currentUser, feeRules]);
 
   const totalTeamCommissions = useMemo(() => {
     return paidSalesInPeriod.reduce((acc, s) => {
       const collab = collaborators.find(c => c.id === s.vendedorId);
       const act = activities.find(a => a.id === s.atividadeId);
       const isCollabAdmin = isAdminCollaborator(collab);
-      const sComm = isCollabAdmin ? 0 : calculateCollaboratorCommission(s, collab, act);
-      return acc + sComm;
+      if (isCollabAdmin) return acc;
+      const rawComm = calculateCollaboratorCommission(s, collab, act);
+      const taxes = calculateSaleTaxes(s, feeRules);
+      const finalComm = Math.max(0, rawComm - taxes.teamTax);
+      return acc + finalComm;
     }, 0);
-  }, [paidSalesInPeriod, collaborators, activities]);
+  }, [paidSalesInPeriod, collaborators, activities, feeRules]);
 
   const totalPartnerCommissions = useMemo(() => {
     return paidSalesInPeriod.reduce((acc, s) => {
@@ -595,7 +603,9 @@ export const HomeView: React.FC = () => {
           .reduce((sum, sale) => {
             const act = activities.find(a => a.id === sale.atividadeId);
             const rawComm = calculateCollaboratorCommission(sale, collab, act);
-            return sum + rawComm;
+            const taxes = calculateSaleTaxes(sale, feeRules);
+            const finalComm = Math.max(0, rawComm - taxes.teamTax);
+            return sum + finalComm;
           }, 0);
 
         const roleStr = collab.cargo === 'Admin' ? 'Administrador' : 'Fotógrafo';
@@ -1271,12 +1281,10 @@ export const HomeView: React.FC = () => {
       }
     }
 
-    // If payment date is cleared but status is Paid, auto set payment date to today
-    let finalPayDate = editingSale?.dataPagamento;
+    // If status is Paid, set payment date to selected dataPagamento or fallback to service date
+    let finalPayDate = undefined;
     if (formData.status === 'Pago') {
-      finalPayDate = editingSale?.dataPagamento || new Date().toISOString().split('T')[0];
-    } else {
-      finalPayDate = undefined;
+      finalPayDate = formData.dataPagamento || formData.data;
     }
 
     // Build pagamentos list for saving
@@ -1740,12 +1748,11 @@ export const HomeView: React.FC = () => {
                       
                       {/* Day or Previous Month Block Header Banner with Stark Contrasted Design */}
                       {block.isCarryover ? (
-                        <div className="text-xs font-black text-rose-800 bg-rose-500/10 border border-rose-500/20 border-l-4 border-l-rose-500 px-4 py-3 rounded-r-xl flex items-center justify-between select-none">
-                          <span className="uppercase tracking-wider font-extrabold flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0 animate-ping" />
-                            <span>Vendas Não Concluídas de {block.label}</span>
+                        <div className="flex items-center gap-3 w-full py-2 select-none">
+                          <span className="text-xs font-black text-rose-700 uppercase tracking-widest whitespace-nowrap">
+                            {block.label}
                           </span>
-                          <span className="text-[10px] bg-rose-500/20 text-rose-800 px-2.5 py-1 rounded-full font-black block">{block.sales.length} pendências</span>
+                          <div className="h-[2px] bg-rose-700 flex-grow" />
                         </div>
                       ) : (
                         <div className="text-xs font-black text-slate-800 bg-slate-100/90 border-l-4 border-l-indigo-500 px-4 py-3 rounded-r-xl flex items-center justify-between select-none font-sans">
@@ -2859,7 +2866,14 @@ export const HomeView: React.FC = () => {
                         <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Status do Lançamento</label>
                         <select
                           value={formData.status}
-                          onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                          onChange={(e) => {
+                            const newStatus = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              status: newStatus,
+                              dataPagamento: newStatus === 'Pago' && !prev.dataPagamento ? prev.data : prev.dataPagamento
+                            }));
+                          }}
                           className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-sm rounded-xl block font-bold text-center mt-1 text-white animate-fade-in cursor-pointer"
                         >
                           <option value="Pago" className="text-emerald-400 font-bold">PAGO</option>
@@ -2868,6 +2882,20 @@ export const HomeView: React.FC = () => {
                           <option value="Cancelado" className="text-slate-400 font-bold">Cancelado</option>
                         </select>
                       </div>
+
+                      {/* Data de Pagamento */}
+                      {formData.status === 'Pago' && (
+                        <div className="w-full sm:w-52 text-left animate-fade-in">
+                          <label className="text-[10px] font-black uppercase text-white/50 tracking-wider">Data do Pagamento</label>
+                          <input
+                            type="date"
+                            required
+                            value={formData.dataPagamento}
+                            onChange={(e) => setFormData({ ...formData, dataPagamento: e.target.value })}
+                            className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-sm rounded-xl block font-mono text-center mt-1 text-white cursor-pointer"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
