@@ -841,11 +841,13 @@ export const RelatoriosView: React.FC = () => {
       if (sale.status === 'Archived') return false;
       if (sale.status === 'Pendente') return false;
 
+      const refDate = (sale.status === 'Pago' && sale.dataPagamento) ? sale.dataPagamento : sale.data;
+
       // Date Filtering
       if (useCustomDateRange && startDate && endDate) {
-        if (sale.data < startDate || sale.data > endDate) return false;
+        if (refDate < startDate || refDate > endDate) return false;
       } else {
-        const dateParts = sale.data.split('-');
+        const dateParts = refDate.split('-');
         if (dateParts.length < 3) return false;
         const yr = parseInt(dateParts[0], 10);
         const mo = parseInt(dateParts[1], 10);

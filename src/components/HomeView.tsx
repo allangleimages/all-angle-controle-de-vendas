@@ -489,19 +489,26 @@ export const HomeView: React.FC = () => {
   // 2. FINANCIAL LEDGER INFLOWS (REGIME DE CAIXA: based on payment date falling in timeframe)
   const paidSalesInPeriod = useMemo(() => {
     return sales.filter(sale => {
-      if (sale.status !== 'Pago' || !sale.dataPagamento) return false;
+      if (sale.status !== 'Pago') return false;
 
       // Enforce role visibility
       if (!isAdmin && sale.vendedorId !== currentUser.id) return false;
 
+      // Activity ID filter input
+      if (selectedActivityId !== 'all' && sale.atividadeId !== selectedActivityId) {
+        return false;
+      }
+
+      const refDate = sale.dataPagamento || sale.data;
+
       // Filter timeframe
       const matchTimeframe = isAnnualView 
-        ? sale.dataPagamento.startsWith(`${selectedYear}-`)
-        : sale.dataPagamento.startsWith(selectedPeriodStr);
+        ? refDate.startsWith(`${selectedYear}-`)
+        : refDate.startsWith(selectedPeriodStr);
 
       return matchTimeframe;
-    }).sort((a, b) => (a.dataPagamento || '').localeCompare(b.dataPagamento || ''));
-  }, [sales, selectedYear, selectedPeriodStr, isAnnualView, isAdmin, currentUser.id]);
+    }).sort((a, b) => (a.dataPagamento || a.data).localeCompare(b.dataPagamento || b.data));
+  }, [sales, selectedYear, selectedPeriodStr, isAnnualView, isAdmin, currentUser.id, selectedActivityId]);
 
   // Ledger summary details metrics
   const grossRevenue = useMemo(() => {
