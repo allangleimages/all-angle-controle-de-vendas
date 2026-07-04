@@ -1114,13 +1114,9 @@ export const HomeView: React.FC = () => {
 
   const liveTotalValue = useMemo(() => {
     const basketSum = effectiveCartItems.reduce((acc, item) => acc + item.subtotal, 0);
-    const hasSemEstrutura = effectiveCartItems.some(item => {
-      const pkg = packages.find(p => p.id === item.pacoteId);
-      return pkg?.tipoPreco === 'SemEstrutura';
-    });
-    const discount = hasSemEstrutura ? 0 : (parseFloat(formData.descontoManual) || 0);
+    const discount = parseFloat(formData.descontoManual) || 0;
     return Math.max(0, basketSum - discount);
-  }, [effectiveCartItems, formData.descontoManual, packages]);
+  }, [effectiveCartItems, formData.descontoManual]);
 
   const livePhotosLimitMax = useMemo(() => {
     return effectiveCartItems.reduce((acc, item) => {
@@ -1195,7 +1191,9 @@ export const HomeView: React.FC = () => {
 
     const isVendaDireta = currentSelectedPackage.vendaDireta !== false;
 
-    if (isVendaDireta) {
+    if (currentSelectedPackage.tipoPreco === 'SemEstrutura') {
+      qtyPhotos = parseInt(formData.fotosVendidas, 10) || undefined;
+    } else if (isVendaDireta) {
       if (currentSelectedPackage.tipoPreco === 'Especial' || currentSelectedPackage.tipoPreco === 'Foto') {
         qtyPhotos = parseInt(specialPhotoQty, 10) || 0;
         if (qtyPhotos <= 0) {
@@ -1213,7 +1211,7 @@ export const HomeView: React.FC = () => {
       pacoteId: currentSelectedPackage.id,
       nome: currentSelectedPackage.nomePacote,
       precoUnitario: currentSelectedPackage.tipoPreco === 'SemEstrutura'
-        ? subVal
+        ? (qtyPhotos && qtyPhotos > 0 ? subVal / qtyPhotos : subVal)
         : currentSelectedPackage.tipoPreco === 'Standard' 
           ? baseUnitRate
           : currentSelectedPackage.tipoPreco === 'ProgressivoPessoa'
@@ -1264,11 +1262,7 @@ export const HomeView: React.FC = () => {
     }
 
     // Safety lock: Validate payment sum matches total sale value
-    const hasSemEstrutura = effectiveCartItems.some(item => {
-      const pkg = packages.find(p => p.id === item.pacoteId);
-      return pkg?.tipoPreco === 'SemEstrutura';
-    });
-    if (formData.status === 'Pago' || hasSemEstrutura) {
+    if (formData.status === 'Pago') {
       const sumPayments = paymentRows.reduce((sum, r) => sum + (parseFloat(r.valor) || 0), 0);
       const diff = Math.abs(sumPayments - liveTotalValue);
       if (diff > 0.02) {
