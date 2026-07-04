@@ -373,7 +373,7 @@ export const HomeView: React.FC = () => {
     });
   }, [sales, isAdmin, currentUser.id, selectedActivityId, searchTerm]);
 
-  // Block 1: Carryovers (Past month's non-closed items rolling forward)
+  // Block 1: Carryovers (Past month's non-closed items rolling forward, or items paid in the current selected period)
   const carryoverSales = useMemo(() => {
     return filteredSalesData.filter(sale => {
       // It belongs to a previous month relative to filter
@@ -382,8 +382,17 @@ export const HomeView: React.FC = () => {
         ? sale.data < `${selectedYear}-01-01`
         : salePeriod < selectedPeriodStr;
       
+      if (!isPastMonth) return false;
+
       const isUnresolved = sale.status === 'Pendente' || sale.status === 'Abandonada';
-      return isPastMonth && isUnresolved;
+      
+      const isPaidInCurrentPeriod = sale.status === 'Pago' && sale.dataPagamento && (
+        isAnnualView 
+          ? sale.dataPagamento.startsWith(`${selectedYear}-`)
+          : sale.dataPagamento.startsWith(selectedPeriodStr)
+      );
+
+      return isUnresolved || isPaidInCurrentPeriod;
     }).sort((a, b) => b.data.localeCompare(a.data));
   }, [filteredSalesData, selectedPeriodStr, selectedYear, isAnnualView]);
 
@@ -427,12 +436,19 @@ export const HomeView: React.FC = () => {
         ? sale.data.startsWith(`${selectedYear}-`)
         : salePeriod === selectedPeriodStr;
 
-      // Filter out past month unresolved items that are already pinned in Block 1
+      // Filter out past month items that are already pinned in Block 1
       const isPastMonth = isAnnualView
         ? sale.data < `${selectedYear}-01-01`
         : salePeriod < selectedPeriodStr;
+      
       const isUnresolved = sale.status === 'Pendente' || sale.status === 'Abandonada';
-      const isPinnablePast = isPastMonth && isUnresolved;
+      const isPaidInCurrentPeriod = sale.status === 'Pago' && sale.dataPagamento && (
+        isAnnualView 
+          ? sale.dataPagamento.startsWith(`${selectedYear}-`)
+          : sale.dataPagamento.startsWith(selectedPeriodStr)
+      );
+
+      const isPinnablePast = isPastMonth && (isUnresolved || isPaidInCurrentPeriod);
 
       return inCurrentPeriod && !isPinnablePast;
     }).sort((a, b) => b.data.localeCompare(a.data) || b.createdAt.localeCompare(a.createdAt));
