@@ -105,6 +105,7 @@ export const HomeView: React.FC = () => {
   // Package selector inside Modal
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [specialPhotoQty, setSpecialPhotoQty] = useState('');
+  const [manualPrice, setManualPrice] = useState('');
 
   // Payment methods rows state
   const [paymentRows, setPaymentRows] = useState<Array<{ forma: string; valor: string; taxaId?: string }>>([
@@ -163,6 +164,7 @@ export const HomeView: React.FC = () => {
       setCartItems([]);
       setSelectedPackageId('');
       setSpecialPhotoQty('');
+      setManualPrice('');
       setPaymentRows([
         { forma: '', valor: '', taxaId: '' }
       ]);
@@ -177,6 +179,7 @@ export const HomeView: React.FC = () => {
       setOverrideLaunchDate(null);
       setSelectedPackageId('');
       setSpecialPhotoQty('');
+      setManualPrice('');
       setCartItems([]);
     }
   }, [isLaunchModalOpen]);
@@ -244,8 +247,13 @@ export const HomeView: React.FC = () => {
     const pkg = packages.find(p => p.id === pkgId);
     if (pkg && (pkg.tipoPreco === 'Especial' || pkg.tipoPreco === 'Foto' || pkg.tipoPreco === 'FixoMaisProgressivo')) {
       setSpecialPhotoQty(String(firstItem?.quantidadeFotos || ''));
+      setManualPrice('');
+    } else if (pkg && pkg.tipoPreco === 'SemEstrutura') {
+      setSpecialPhotoQty('');
+      setManualPrice(String(firstItem?.subtotal || ''));
     } else {
       setSpecialPhotoQty('');
+      setManualPrice('');
     }
     
     // Load existing multiple payments if available
@@ -658,6 +666,16 @@ export const HomeView: React.FC = () => {
     return hasSelectionDependent;
   }, [currentSelectedPackage, cartItems, packages]);
 
+  const isSemEstruturaActive = useMemo(() => {
+    if (currentSelectedPackage?.tipoPreco === 'SemEstrutura') {
+      return true;
+    }
+    return cartItems.some(item => {
+      const pkg = packages.find(p => p.id === item.pacoteId);
+      return pkg && pkg.tipoPreco === 'SemEstrutura';
+    });
+  }, [currentSelectedPackage, cartItems, packages]);
+
   // Automated dynamic status setter based on packages in cart or selection
   useEffect(() => {
     if (!isLaunchModalOpen) return;
@@ -760,6 +778,10 @@ export const HomeView: React.FC = () => {
   // Calculates subtotal of the package chosen to be added to cart
   const currentItemCalculatedSubtotal = useMemo(() => {
     if (!currentSelectedPackage) return 0;
+
+    if (currentSelectedPackage.tipoPreco === 'SemEstrutura') {
+      return parseFloat(manualPrice) || 0;
+    }
     
     // If the package is already in the cart, we can directly return its subtotal from the cart items
     const existingItem = cartItems.find(item => item.pacoteId === selectedPackageId);
@@ -833,7 +855,7 @@ export const HomeView: React.FC = () => {
         return subtotal;
       }
     }
-  }, [currentSelectedPackage, formPeopleCount, specialPhotoQty, formData.fotosVendidas, accumulatedPhotosInCart, cartItems, selectedPackageId]);
+  }, [currentSelectedPackage, formPeopleCount, specialPhotoQty, formData.fotosVendidas, accumulatedPhotosInCart, cartItems, selectedPackageId, manualPrice]);
 
   // Synchronize cart items with changes to fotosVendidas and pessoas
   // Synchronize cart items with changes to pessoas
@@ -870,7 +892,10 @@ export const HomeView: React.FC = () => {
         }
 
         if (isVendaDireta) {
-          if (pkg.tipoPreco === 'Standard') {
+          if (pkg.tipoPreco === 'SemEstrutura') {
+            newSubtotal = parseFloat(manualPrice) || 0;
+            newPrecoUnitario = newSubtotal;
+          } else if (pkg.tipoPreco === 'Standard') {
             newSubtotal = (pkg.precoStandard || 0) * formPeopleCount;
             newPrecoUnitario = pkg.precoStandard || 0;
           } else if (pkg.tipoPreco === 'ProgressivoPessoa') {
@@ -904,7 +929,10 @@ export const HomeView: React.FC = () => {
           }
         } else {
           const qtySold = targetQty || 0;
-          if (qtySold <= 0) {
+          if (pkg.tipoPreco === 'SemEstrutura') {
+            newSubtotal = parseFloat(manualPrice) || 0;
+            newPrecoUnitario = newSubtotal;
+          } else if (qtySold <= 0) {
             newSubtotal = 0;
             newPrecoUnitario = 0;
           } else {
@@ -957,7 +985,7 @@ export const HomeView: React.FC = () => {
 
       return isChanged ? updated : prevItems;
     });
-  }, [formData.pessoas, packages, formPeopleCount, formData.fotosVendidas]);
+  }, [formData.pessoas, packages, formPeopleCount, formData.fotosVendidas, manualPrice]);
 
   // Handle initializing or adjusting photo metrics based on the selected package's registered attributes
   useEffect(() => {
@@ -971,7 +999,10 @@ export const HomeView: React.FC = () => {
       let defaultVendidas = '';
       let defaultEnviadas = '';
 
-      if (currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
+      if (currentSelectedPackage.tipoPreco === 'SemEstrutura') {
+        defaultVendidas = '';
+        defaultEnviadas = '';
+      } else if (currentSelectedPackage.tipoPreco === 'FixoMaisProgressivo') {
         const minPessoas = currentSelectedPackage.pessoasMinimas || 2;
         defaultPessoas = String(minPessoas);
         const baseFotos = minPessoas * (currentSelectedPackage.fotosPorPessoa || 3);
@@ -1060,9 +1091,13 @@ export const HomeView: React.FC = () => {
 
   const liveTotalValue = useMemo(() => {
     const basketSum = effectiveCartItems.reduce((acc, item) => acc + item.subtotal, 0);
-    const discount = parseFloat(formData.descontoManual) || 0;
+    const hasSemEstrutura = effectiveCartItems.some(item => {
+      const pkg = packages.find(p => p.id === item.pacoteId);
+      return pkg?.tipoPreco === 'SemEstrutura';
+    });
+    const discount = hasSemEstrutura ? 0 : (parseFloat(formData.descontoManual) || 0);
     return Math.max(0, basketSum - discount);
-  }, [effectiveCartItems, formData.descontoManual]);
+  }, [effectiveCartItems, formData.descontoManual, packages]);
 
   const livePhotosLimitMax = useMemo(() => {
     return effectiveCartItems.reduce((acc, item) => {
@@ -1154,11 +1189,13 @@ export const HomeView: React.FC = () => {
     const newItem = {
       pacoteId: currentSelectedPackage.id,
       nome: currentSelectedPackage.nomePacote,
-      precoUnitario: currentSelectedPackage.tipoPreco === 'Standard' 
-        ? baseUnitRate
-        : currentSelectedPackage.tipoPreco === 'ProgressivoPessoa'
-          ? (subVal / formPeopleCount)
-          : (subVal / (qtyPhotos || 1)),
+      precoUnitario: currentSelectedPackage.tipoPreco === 'SemEstrutura'
+        ? subVal
+        : currentSelectedPackage.tipoPreco === 'Standard' 
+          ? baseUnitRate
+          : currentSelectedPackage.tipoPreco === 'ProgressivoPessoa'
+            ? (subVal / formPeopleCount)
+            : (subVal / (qtyPhotos || 1)),
       subtotal: subVal,
       quantidadeFotos: qtyPhotos
     };
@@ -1204,7 +1241,11 @@ export const HomeView: React.FC = () => {
     }
 
     // Safety lock: Validate payment sum matches total sale value
-    if (formData.status === 'Pago') {
+    const hasSemEstrutura = effectiveCartItems.some(item => {
+      const pkg = packages.find(p => p.id === item.pacoteId);
+      return pkg?.tipoPreco === 'SemEstrutura';
+    });
+    if (formData.status === 'Pago' || hasSemEstrutura) {
       const sumPayments = paymentRows.reduce((sum, r) => sum + (parseFloat(r.valor) || 0), 0);
       const diff = Math.abs(sumPayments - liveTotalValue);
       if (diff > 0.02) {
@@ -2497,7 +2538,15 @@ export const HomeView: React.FC = () => {
                       <select
                         value={formData.atividadeId}
                         onChange={(e) => {
-                          setFormData({ ...formData, atividadeId: e.target.value });
+                          const newActId = e.target.value;
+                          const activeActivity = activities.find(a => a.id === newActId);
+                          const linkedPartnerId = activeActivity?.parceiroId || '';
+                          
+                          setFormData(prev => ({
+                            ...prev,
+                            atividadeId: newActId,
+                            parceiroId: linkedPartnerId
+                          }));
                           setSelectedPackageId('');
                           setCartItems([]); // Clear bag upon switching core logistics
                         }}
@@ -2526,18 +2575,8 @@ export const HomeView: React.FC = () => {
                         {packages
                           .filter(pkg => (pkg.atividadeId === formData.atividadeId && !pkg.arquivado) || pkg.id === selectedPackageId)
                           .map(pkg => {
-                            const rate = pkg.precoStandard ?? (pkg as any).precoBase ?? 0;
-                            const subLabel = pkg.tipoPreco === 'Standard' 
-                              ? `R$ ${rate} por pessoa` 
-                              : pkg.tipoPreco === 'Foto'
-                              ? `R$ ${rate} por foto`
-                              : pkg.tipoPreco === 'ProgressivoPessoa'
-                              ? `R$ ${pkg.precoPrimeiraPessoa ?? 0} (1ª) + R$ ${pkg.precoSegundaPessoa ?? 0} (2ª) + R$ ${pkg.precoAdicionalPessoa ?? 0}/adicional`
-                              : pkg.tipoPreco === 'FixoMaisProgressivo'
-                              ? `R$ ${pkg.valorPorPessoa ?? 0} por pessoa (mín. ${pkg.pessoasMinimas ?? 2} pessoas)`
-                              : 'Preço Progressivo por Item';
                             return (
-                              <option key={pkg.id} value={pkg.id}>{pkg.nomePacote} ({subLabel})</option>
+                              <option key={pkg.id} value={pkg.id}>{pkg.nomePacote}</option>
                             );
                           })}
                       </select>
@@ -2603,7 +2642,7 @@ export const HomeView: React.FC = () => {
                   {/* Dynamic inputs for Photos inside VALORES E PACOTES */}
                   {(currentSelectedPackage || cartItems.length > 0) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950/20 p-4 rounded-xl border border-white/5">
-                      {isSelectionDependentActive ? (
+                      {(isSelectionDependentActive || isSemEstruturaActive) ? (
                         <>
                           {/* FOTOS ENVIADAS (Selection Dependent) */}
                           <div>
@@ -2684,35 +2723,60 @@ export const HomeView: React.FC = () => {
                     <div className="bg-indigo-950/40 border border-indigo-500/25 p-5 rounded-2xl text-left text-xs font-semibold leading-relaxed space-y-3 animate-fade-in">
                       <div className="flex justify-between items-center text-slate-300">
                         <span className="text-[10px] text-indigo-300 uppercase font-black tracking-wider">Produto Selecionado</span>
-                        <strong className="text-white uppercase font-black">{currentSelectedPackage.nomePacote} ({currentSelectedPackage.tipoPreco})</strong>
+                        <strong className="text-white uppercase font-black">{currentSelectedPackage.nomePacote}</strong>
                       </div>
 
-                      <div className="flex justify-between items-center border-t border-white/5 pt-2.5 text-slate-300">
-                        <span>Subtotal do Produto</span>
-                        <strong className="font-mono text-xs font-bold text-white">{formatCurrency(currentItemCalculatedSubtotal)}</strong>
-                      </div>
+                      {currentSelectedPackage.tipoPreco === 'SemEstrutura' ? (
+                        <div className="space-y-3 pt-2.5 border-t border-white/5">
+                          <div className="flex justify-between items-center text-slate-300">
+                            <span>Subtotal do Produto</span>
+                            <strong className="font-mono text-xs font-bold text-white">{formatCurrency(parseFloat(manualPrice) || 0)}</strong>
+                          </div>
+                          
+                          <div className="bg-slate-900/40 p-4 rounded-xl border border-white/5 space-y-2">
+                            <label className="text-[10px] font-black uppercase text-indigo-300 tracking-wider block">Digitar o valor do produto de forma manual (R$)</label>
+                            <input
+                              type="text"
+                              placeholder="Ex: 350.00"
+                              value={manualPrice}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9.]/g, '');
+                                setManualPrice(val);
+                              }}
+                              className="w-full bg-slate-950/80 border border-indigo-500/30 px-3.5 py-2.5 text-sm rounded-xl block focus:outline-none focus:border-indigo-500 font-mono text-center text-emerald-400 font-bold"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-center border-t border-white/5 pt-2.5 text-slate-300">
+                            <span>Subtotal do Produto</span>
+                            <strong className="font-mono text-xs font-bold text-white">{formatCurrency(currentItemCalculatedSubtotal)}</strong>
+                          </div>
 
-                      <div className="grid grid-cols-2 gap-4 items-center bg-slate-900/40 p-3.5 rounded-xl border border-white/5">
-                        <div>
-                          <label className="text-[9px] font-black uppercase text-indigo-300 tracking-wider block mb-1">Desconto Aplicado (R$)</label>
-                          <input
-                            type="text"
-                            placeholder="0.00"
-                            value={formData.descontoManual}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9.]/g, '');
-                              setFormData({ ...formData, descontoManual: val });
-                            }}
-                            className="w-full bg-white/5 border border-white/10 px-3 py-1.5 text-xs rounded-lg block focus:outline-none focus:border-indigo-500 font-mono text-center text-rose-300"
-                          />
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block mb-1">Valor Final do Produto</span>
-                          <strong className="font-mono text-emerald-450 font-black text-sm block">
-                            {formatCurrency(Math.max(0, currentItemCalculatedSubtotal - (parseFloat(formData.descontoManual) || 0)))}
-                          </strong>
-                        </div>
-                      </div>
+                          <div className="grid grid-cols-2 gap-4 items-center bg-slate-900/40 p-3.5 rounded-xl border border-white/5">
+                            <div>
+                              <label className="text-[9px] font-black uppercase text-indigo-300 tracking-wider block mb-1">Desconto Aplicado (R$)</label>
+                              <input
+                                type="text"
+                                placeholder="0.00"
+                                value={formData.descontoManual}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[^0-9.]/g, '');
+                                  setFormData({ ...formData, descontoManual: val });
+                                }}
+                                className="w-full bg-white/5 border border-white/10 px-3 py-1.5 text-xs rounded-lg block focus:outline-none focus:border-indigo-500 font-mono text-center text-rose-300"
+                              />
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block mb-1">Valor Final do Produto</span>
+                              <strong className="font-mono text-emerald-450 font-black text-sm block">
+                                {formatCurrency(Math.max(0, currentItemCalculatedSubtotal - (parseFloat(formData.descontoManual) || 0)))}
+                              </strong>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -2983,7 +3047,7 @@ export const HomeView: React.FC = () => {
 
                     {/* Photos Count Mismatch Warning */}
                     {(() => {
-                      if (currentSelectedPackage && currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
+                      if (currentSelectedPackage && currentSelectedPackage.tipoPreco !== 'SemEstrutura' && currentSelectedPackage.possuiLimiteFotosPorPessoa && currentSelectedPackage.limiteFotosPorPessoa) {
                         const expectedPhotos = currentSelectedPackage.limiteFotosPorPessoa * formPeopleCount;
                         const filledPhotos = parseInt(formData.fotosVendidas, 10) || 0;
                         if (filledPhotos !== expectedPhotos) {

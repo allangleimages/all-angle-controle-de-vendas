@@ -101,7 +101,7 @@ export interface Package {
   id: string;
   atividadeId: string; // Activity relation
   nomePacote: string;
-  tipoPreco: 'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo';
+  tipoPreco: 'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo' | 'SemEstrutura';
   precoStandard?: number; // Price per person for standard or price per photo for 'Foto'
   precoFoto?: number; // Price per single photo for 'Foto' if isolated
   fotosPacote?: number; // Number of photos included in package

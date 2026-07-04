@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from './AppContext';
 import { Package, PricingTier } from '../types';
-import { Plus, Trash2, Tag, Layers, Settings, FileSpreadsheet, EyeOff, ClipboardList, HelpCircle, AlertTriangle, X, Check, Eye } from 'lucide-react';
+import { Plus, Trash2, Tag, Layers, Settings, FileSpreadsheet, EyeOff, ClipboardList, HelpCircle, AlertTriangle, X, Check, Eye, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 
@@ -35,7 +35,7 @@ export const ValoresPacotesView: React.FC = () => {
   // Form states
   const [atividadeId, setAtividadeId] = useState('');
   const [nomePacote, setNomePacote] = useState('');
-  const [tipoPreco, setTipoPreco] = useState<'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo'>('Standard');
+  const [tipoPreco, setTipoPreco] = useState<'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo' | 'SemEstrutura'>('Standard');
   const [parceiroId, setParceiroId] = useState('');
 
   // Pricing fields
@@ -174,6 +174,38 @@ export const ValoresPacotesView: React.FC = () => {
       { minFotos: 21, maxFotos: 999, precoUnitario: 10 }
     ]);
     // Loading new variables
+    setVendaDireta(pkg.vendaDireta !== false);
+    setIncluirMetricaFotos(pkg.incluirMetricaFotos || false);
+    setPrecoPrimeiraPessoa(pkg.precoPrimeiraPessoa?.toString() || '800');
+    setPrecoSegundaPessoa(pkg.precoSegundaPessoa !== undefined ? pkg.precoSegundaPessoa.toString() : '0');
+    setPrecoAdicionalPessoa(pkg.precoAdicionalPessoa?.toString() || '200');
+    setPessoasMinimas(pkg.pessoasMinimas?.toString() || '2');
+    setValorPorPessoa(pkg.valorPorPessoa?.toString() || '120');
+    setFotosPorPessoa(pkg.fotosPorPessoa?.toString() || '3');
+    setPossuiLimiteFotosPorPessoa(pkg.possuiLimiteFotosPorPessoa || false);
+    setLimiteFotosPorPessoa(pkg.limiteFotosPorPessoa?.toString() || '25');
+    setMensagemAbandono(pkg.mensagemAbandono || 'Olá {nomeCliente}! Verificamos que o seu carrinho de fotos da atividade {atividade} está registrado. Para escolher e receber suas fotos, acesse nosso link de seleção. Estamos te esperando!');
+    setIsOpen(true);
+  };
+
+  const handleDuplicatePackage = (pkg: Package) => {
+    setError(null);
+    setEditingPackage(null); // Set to null so it creates a new package!
+    setAtividadeId(pkg.atividadeId);
+    setNomePacote(`${pkg.nomePacote} (Cópia)`);
+    setTipoPreco(pkg.tipoPreco);
+    setPrecoStandard(pkg.precoStandard?.toString() || '0');
+    setFotosPacote(pkg.fotosPacote?.toString() || '0');
+    setMaxFotosEnviadas(pkg.maxFotosEnviadas?.toString() || '0');
+    setDescricao(pkg.descricao || '');
+    setMediaRef(pkg.mediaRef || '');
+    setParceiroId(pkg.parceiroId || '');
+    setCorTag(pkg.corTag || '#2563eb');
+    setTiers(pkg.tiers ? pkg.tiers.map(t => ({ ...t })) : [
+      { minFotos: 1, maxFotos: 10, precoUnitario: 15 },
+      { minFotos: 11, maxFotos: 20, precoUnitario: 12 },
+      { minFotos: 21, maxFotos: 999, precoUnitario: 10 }
+    ]);
     setVendaDireta(pkg.vendaDireta !== false);
     setIncluirMetricaFotos(pkg.incluirMetricaFotos || false);
     setPrecoPrimeiraPessoa(pkg.precoPrimeiraPessoa?.toString() || '800');
@@ -456,6 +488,9 @@ export const ValoresPacotesView: React.FC = () => {
                 } : pkg.tipoPreco === 'FixoMaisProgressivo' ? {
                   badgeClass: 'bg-pink-50 text-pink-800 border-pink-200',
                   typeName: 'Valor Fixo + Prog. Foto 👥📈',
+                } : pkg.tipoPreco === 'SemEstrutura' ? {
+                  badgeClass: 'bg-slate-100 text-slate-700 border-slate-300',
+                  typeName: 'Sem Estrutura (Manual) 📭',
                 } : {
                   badgeClass: 'bg-purple-50 text-purple-800 border-purple-200',
                   typeName: 'Valor Progressivo Multi-faixa 📈',
@@ -502,6 +537,14 @@ export const ValoresPacotesView: React.FC = () => {
                     {/* Financial Value Highlighting */}
                     <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl text-center space-y-1">
                       <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block">PREÇO DO PACOTE</span>
+                      {pkg.tipoPreco === 'SemEstrutura' && (
+                        <div>
+                          <h3 className="text-sm font-black text-slate-700 uppercase font-sans">
+                            Preenchido Manualmente
+                          </h3>
+                          <span className="text-[9px] text-slate-500 uppercase font-black tracking-wider block mt-1 bg-slate-100 py-0.5 rounded">Flexibilidade total de faturamento</span>
+                        </div>
+                      )}
                       {pkg.tipoPreco === 'Standard' && (
                         <div>
                           <h3 className="text-2xl font-black text-slate-900 font-mono">
@@ -614,7 +657,16 @@ export const ValoresPacotesView: React.FC = () => {
 
                   {/* BOTTOM AUDIT TRIGGER */}
                   <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-slate-900">
-                    <span className="group-hover:text-indigo-600 transition-colors">Ver Detalhes do Produto</span>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicatePackage(pkg);
+                      }}
+                      className="border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-black px-3 py-1.5 rounded-xl uppercase text-[9px] tracking-tight transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                      Duplicar
+                    </button>
                     <button className="bg-[#0e2438] hover:bg-[#1a3d5c] text-white px-3 py-1.5 rounded-xl uppercase text-[9px] font-black tracking-tight transition-all">
                       Visualizar →
                     </button>
@@ -636,7 +688,7 @@ export const ValoresPacotesView: React.FC = () => {
               return (
                 <div key={pkg.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] py-2.5 first:pt-0 last:pb-0 opacity-60">
                   <div>
-                    <span className="font-extrabold text-slate-800 uppercase block">{pkg.nomePacote} ({pkg.tipoPreco === 'Standard' ? 'Pessoa' : pkg.tipoPreco === 'Foto' ? 'Foto' : pkg.tipoPreco === 'FixoMaisProgressivo' ? 'Fixo + Progressivo' : 'Progressivo'})</span>
+                    <span className="font-extrabold text-slate-800 uppercase block">{pkg.nomePacote} ({pkg.tipoPreco === 'Standard' ? 'Pessoa' : pkg.tipoPreco === 'Foto' ? 'Foto' : pkg.tipoPreco === 'FixoMaisProgressivo' ? 'Fixo + Progressivo' : pkg.tipoPreco === 'SemEstrutura' ? 'Sem Estrutura' : 'Progressivo'})</span>
                     <span className="text-[10px] text-slate-450 block mt-0.5">Atividade de Repasse: {actName}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-2 sm:mt-0">
@@ -716,6 +768,23 @@ export const ValoresPacotesView: React.FC = () => {
                 <div className="space-y-4 bg-slate-50 border border-slate-100 rounded-2xl p-5 mb-6 text-slate-800 text-xs leading-relaxed">
                   <h4 className="text-[10px] font-extrabold uppercase text-slate-450 tracking-wider">Estrutura e Regras de Precificação Comercial</h4>
                   
+                  {renderedSelectedPackage.tipoPreco === 'SemEstrutura' && (
+                    <div className="space-y-2 border-t border-slate-200 pt-2 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Metodologia:</span>
+                        <span className="font-bold text-slate-900 uppercase">Sem Estrutura de Precificação</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Preços e Quantidades:</span>
+                        <span className="font-bold text-indigo-600">Preenchidos Manualmente no Lançamento</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 text-[10px]">
+                        <span>Regra Operacional:</span>
+                        <span>Não possui valores pré-definidos. Permite total flexibilidade na hora de registrar a venda.</span>
+                      </div>
+                    </div>
+                  )}
+
                   {renderedSelectedPackage.tipoPreco === 'Standard' && (
                     <div className="space-y-2 border-t border-slate-200 pt-2 text-[11px]">
                       <div className="flex justify-between">
@@ -890,28 +959,39 @@ export const ValoresPacotesView: React.FC = () => {
 
                 {/* Footer Controls */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => {
+                        handleDuplicatePackage(renderedSelectedPackage);
+                        setSelectedPackage(null);
+                      }}
+                      className="flex-1 min-w-[140px] bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 px-5 rounded-xl uppercase text-xs transition cursor-pointer text-center flex items-center justify-center gap-1.5"
+                    >
+                      <Copy className="w-4 h-4" />
+                      Duplicar Pacote
+                    </button>
+
                     <button
                       onClick={() => {
                         handleOpenEditModal(renderedSelectedPackage);
                         setSelectedPackage(null);
                       }}
-                      className="flex-1 bg-[#0e2438] hover:bg-[#1c3a5a] text-white border border-[#0e2438] font-bold py-3 px-5 rounded-xl uppercase text-xs transition cursor-pointer text-center"
+                      className="flex-1 min-w-[140px] bg-[#0e2438] hover:bg-[#1c3a5a] text-white border border-[#0e2438] font-bold py-3 px-5 rounded-xl uppercase text-xs transition cursor-pointer text-center"
                     >
                       Editar Dados
                     </button>
 
-                    {checkPackageHasHistory(renderedSelectedPackage.id) ? (
-                      <button
-                        onClick={() => {
-                          archivePackage(renderedSelectedPackage.id);
-                          setSelectedPackage(null);
-                        }}
-                        className="flex-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 font-bold py-3 px-5 rounded-xl uppercase text-xs transition cursor-pointer"
-                      >
-                        Arquivar para Vendas
-                      </button>
-                    ) : (
+                    <button
+                      onClick={() => {
+                        archivePackage(renderedSelectedPackage.id);
+                        setSelectedPackage(null);
+                      }}
+                      className="flex-1 min-w-[140px] bg-amber-100/90 hover:bg-amber-200 border border-amber-400 text-amber-950 font-black py-3 px-5 rounded-xl uppercase text-xs transition cursor-pointer text-center"
+                    >
+                      Arquivar para Vendas
+                    </button>
+
+                    {!checkPackageHasHistory(renderedSelectedPackage.id) && (
                       <button
                         onClick={() => {
                           if (isConfirmingDelete) {
@@ -922,10 +1002,10 @@ export const ValoresPacotesView: React.FC = () => {
                             setIsConfirmingDelete(true);
                           }
                         }}
-                        className={`flex-1 font-bold py-3 px-5 rounded-xl uppercase text-xs transition-all cursor-pointer text-center ${
+                        className={`flex-1 min-w-[140px] font-extrabold py-3 px-5 rounded-xl uppercase text-xs transition-all cursor-pointer text-center ${
                           isConfirmingDelete
-                            ? 'bg-rose-800 text-white border border-rose-900 animate-pulse font-extrabold shadow-lg scale-[1.02]'
-                            : 'bg-rose-600 hover:bg-rose-700 text-white'
+                            ? 'bg-rose-800 text-white border border-rose-950 animate-pulse font-black shadow-lg scale-[1.02]'
+                            : 'bg-rose-700 hover:bg-rose-800 text-white'
                         }`}
                       >
                         {isConfirmingDelete ? 'Clique novamente para confirmar' : 'Excluir Permanentemente'}
@@ -1153,11 +1233,34 @@ export const ValoresPacotesView: React.FC = () => {
                           />
                           Valor Fixo + Prog. Foto (👤📸)
                         </label>
+                        <label className="flex items-center gap-2 font-black text-white/60 hover:text-white cursor-pointer select-none text-[11px] uppercase p-1">
+                          <input
+                            type="radio"
+                            name="pricing_option"
+                            checked={tipoPreco === 'SemEstrutura'}
+                            onChange={() => setTipoPreco('SemEstrutura')}
+                            disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
+                            className="accent-white w-4 h-4 cursor-pointer"
+                          />
+                          Sem Estrutura de Precificação
+                        </label>
                       </div>
                     </div>
 
                     {/* Dynamic Configurations Panels */}
                     <div className="col-span-1 md:col-span-2">
+                      {tipoPreco === 'SemEstrutura' && (
+                        <div className="bg-slate-900 p-5 rounded-2xl border border-white/10 space-y-2 text-slate-300">
+                          <h4 className="text-xs font-black text-white uppercase">Sem Estrutura de Precificação 📭</h4>
+                          <p className="text-[11px] leading-relaxed">
+                            Ao selecionar esta opção, todos os campos de preços, fotos inclusas, limite de envio, valores fixos e progressivos ficarão vazios (em branco) no contrato.
+                          </p>
+                          <p className="text-[11px] leading-relaxed text-indigo-400 font-bold">
+                            A ideia é que este pacote comercial seja preenchido 100% de forma manual diretamente no momento do lançamento de venda.
+                          </p>
+                        </div>
+                      )}
+
                       {tipoPreco === 'Standard' && (
                         <div className="grid grid-cols-3 gap-4 bg-white/5 p-5 rounded-2xl border border-white/10">
                           <div className="space-y-1.5 col-span-3 sm:col-span-1 font-bold">
