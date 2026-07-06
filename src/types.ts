@@ -138,5 +138,8 @@ export interface FeeRule {
   observacao?: string;
   exibirApenasConsolidado?: boolean;
   valorConsolidadoRelatorio?: number;
+  descontarApenasConsolidado?: boolean;
+  tipoDescontoConsolidado?: 'porcentagem' | 'fixo';
+  valorDescontoConsolidado?: number;
 }
 

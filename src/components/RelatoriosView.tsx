@@ -162,6 +162,12 @@ export const RelatoriosView: React.FC = () => {
     const activeDiscountTaxRule = feeRules.find(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0));
     const taxLabelName = activeDiscountTaxRule ? activeDiscountTaxRule.nome : 'Alboom Pay';
     drawRow(`(-) Valores Descontados ${taxLabelName}:`, `- R$ ${financialTotals.totalAlboomTax.toFixed(2)}`);
+    if (financialTotals.consolidadoDiscountsList && financialTotals.consolidadoDiscountsList.length > 0) {
+      financialTotals.consolidadoDiscountsList.forEach(({ nome, valor, tipo, taxaPct }) => {
+        const pctLabel = tipo === 'porcentagem' ? ` (${taxaPct}%)` : '';
+        drawRow(`(-) ${nome}${pctLabel}:`, `- R$ ${valor.toFixed(2)}`);
+      });
+    }
     drawRow("(=) Saldo Líquido Final para ALL ANGLE:", `R$ ${financialTotals.netRevenue.toFixed(2)}`, true);
     
     if (financialTotals.totalFixedReportFees > 0) {
@@ -616,6 +622,12 @@ export const RelatoriosView: React.FC = () => {
     const activeDiscountTaxRule = feeRules.find(r => !r.arquivado && !r.exibirApenasConsolidado && ((r.porcentagemAllAngle || 0) + (r.porcentagemEquipe || 0) > 0));
     const taxLabelName = activeDiscountTaxRule ? activeDiscountTaxRule.nome : 'Alboom Pay';
     csvContent += `(-) Valores Descontados ${taxLabelName}:;${financialTotals.totalAlboomTax.toFixed(2).replace('.', ',')}\r\n`;
+    if (financialTotals.consolidadoDiscountsList && financialTotals.consolidadoDiscountsList.length > 0) {
+      financialTotals.consolidadoDiscountsList.forEach(({ nome, valor, tipo, taxaPct }) => {
+        const pctLabel = tipo === 'porcentagem' ? ` (${taxaPct}%)` : '';
+        csvContent += `(-) ${nome}${pctLabel}:;-` + valor.toFixed(2).replace('.', ',') + `\r\n`;
+      });
+    }
     csvContent += `(=) Saldo Líquido Final para ALL ANGLE:;${financialTotals.netRevenue.toFixed(2).replace('.', ',')}\r\n\r\n`;
 
     if (financialTotals.totalFixedReportFees > 0) {
@@ -988,12 +1000,34 @@ export const RelatoriosView: React.FC = () => {
       }
     });
 
+    let totalConsolidadoDiscounts = 0;
+    const consolidadoDiscountsList: Array<{ nome: string; valor: number; tipo: 'porcentagem' | 'fixo'; taxaPct?: number }> = [];
+
+    feeRules.filter(r => !r.arquivado && r.descontarApenasConsolidado).forEach(rule => {
+      let val = 0;
+      if (rule.tipoDescontoConsolidado === 'fixo') {
+        val = rule.valorDescontoConsolidado || 0;
+      } else {
+        const pct = rule.valorDescontoConsolidado || 0;
+        val = (grossRevenue * pct) / 100;
+      }
+      if (val > 0) {
+        totalConsolidadoDiscounts += val;
+        consolidadoDiscountsList.push({
+          nome: rule.nome,
+          valor: val,
+          tipo: rule.tipoDescontoConsolidado || 'porcentagem',
+          taxaPct: rule.tipoDescontoConsolidado === 'porcentagem' ? rule.valorDescontoConsolidado : undefined
+        });
+      }
+    });
+
     const totalFixedReportFees = feeRules
       .filter(r => !r.arquivado && r.exibirApenasConsolidado)
       .reduce((acc, r) => acc + (r.valorConsolidadoRelatorio || 0), 0);
 
     const totalCommissions = totalTeamCommissions + totalPartnerCommissions;
-    const netRevenue = grossRevenue - totalCommissions - totalAlboomTax;
+    const netRevenue = grossRevenue - totalCommissions - totalAlboomTax - totalConsolidadoDiscounts;
 
     return {
       grossRevenue,
@@ -1002,6 +1036,8 @@ export const RelatoriosView: React.FC = () => {
       totalPartnerCommissions,
       totalAlboomTax,
       totalFixedReportFees,
+      totalConsolidadoDiscounts,
+      consolidadoDiscountsList,
       netRevenue,
       totalSubtotalOriginal,
       totalDescontoAplicado: 0,
@@ -1951,6 +1987,15 @@ export const RelatoriosView: React.FC = () => {
                   </div>
                 )
               ))}
+              {financialTotals.consolidadoDiscountsList && financialTotals.consolidadoDiscountsList.map(({ nome, valor, tipo, taxaPct }) => {
+                const pctLabel = tipo === 'porcentagem' ? ` (${taxaPct}%)` : '';
+                return (
+                  <div key={nome} className="flex justify-between items-center text-slate-200 font-semibold pt-3">
+                    <span className="font-sans text-rose-300">(-) {nome}{pctLabel}:</span>
+                    <span className="font-mono text-rose-400 font-bold">- R$ {valor.toFixed(2)}</span>
+                  </div>
+                );
+              })}
               <div className="flex justify-between items-center bg-slate-950 border-2 border-emerald-500/65 rounded-2xl px-5 py-4.5 mt-4 shadow-inner">
                 <span className="font-sans text-white font-black uppercase tracking-wider text-xs">(=) Saldo Líquido Final para ALL ANGLE:</span>
                 <span className="font-mono text-emerald-400 text-2xl font-black drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.8)]">

@@ -24,6 +24,9 @@ export const TaxasDescontosView: React.FC = () => {
   const [observacao, setObservacao] = useState('');
   const [exibirApenasConsolidado, setExibirApenasConsolidado] = useState(false);
   const [valorConsolidadoRelatorio, setValorConsolidadoRelatorio] = useState('0');
+  const [descontarApenasConsolidado, setDescontarApenasConsolidado] = useState(false);
+  const [tipoDescontoConsolidado, setTipoDescontoConsolidado] = useState<'porcentagem' | 'fixo'>('porcentagem');
+  const [valorDescontoConsolidado, setValorDescontoConsolidado] = useState('0');
   const [showArchived, setShowArchived] = useState(false);
 
   if (!isAdmin) {
@@ -48,6 +51,9 @@ export const TaxasDescontosView: React.FC = () => {
     setObservacao('');
     setExibirApenasConsolidado(false);
     setValorConsolidadoRelatorio('0');
+    setDescontarApenasConsolidado(false);
+    setTipoDescontoConsolidado('porcentagem');
+    setValorDescontoConsolidado('0');
     setEditingRule(null);
     setError(null);
     setIsOpen(true);
@@ -63,6 +69,9 @@ export const TaxasDescontosView: React.FC = () => {
     setObservacao(rule.observacao || '');
     setExibirApenasConsolidado(rule.exibirApenasConsolidado || false);
     setValorConsolidadoRelatorio(rule.valorConsolidadoRelatorio !== undefined ? rule.valorConsolidadoRelatorio.toString() : '0');
+    setDescontarApenasConsolidado(rule.descontarApenasConsolidado || false);
+    setTipoDescontoConsolidado(rule.tipoDescontoConsolidado || 'porcentagem');
+    setValorDescontoConsolidado(rule.valorDescontoConsolidado !== undefined ? rule.valorDescontoConsolidado.toString() : '0');
     setEditingRule(rule);
     setError(null);
     setIsOpen(true);
@@ -83,10 +92,17 @@ export const TaxasDescontosView: React.FC = () => {
       return;
     }
 
-    const pctAllAngle = (!exibirApenasConsolidado && aplicarAllAngle) ? parseFloat(porcentagemAllAngle) : 0;
-    const pctEquipe = (!exibirApenasConsolidado && aplicarEquipe) ? parseFloat(porcentagemEquipe) : 0;
+    const valDescontoConsolidado = descontarApenasConsolidado ? parseFloat(valorDescontoConsolidado) : 0;
+    if (descontarApenasConsolidado && (isNaN(valDescontoConsolidado) || valDescontoConsolidado < 0)) {
+      setError(tipoDescontoConsolidado === 'fixo' ? 'Por favor, insira um valor fixo de desconto válido.' : 'Por favor, insira uma porcentagem de desconto válida.');
+      return;
+    }
 
-    if (!exibirApenasConsolidado) {
+    const isSpecialConsolidado = exibirApenasConsolidado || descontarApenasConsolidado;
+    const pctAllAngle = (!isSpecialConsolidado && aplicarAllAngle) ? parseFloat(porcentagemAllAngle) : 0;
+    const pctEquipe = (!isSpecialConsolidado && aplicarEquipe) ? parseFloat(porcentagemEquipe) : 0;
+
+    if (!isSpecialConsolidado) {
       if (aplicarAllAngle && (isNaN(pctAllAngle) || pctAllAngle < 0)) {
         setError(tipoDesconto === 'fixo' ? 'Por favor, insira um valor fixo válido para a All Angle.' : 'Por favor, insira uma porcentagem válida para a All Angle.');
         return;
@@ -105,14 +121,17 @@ export const TaxasDescontosView: React.FC = () => {
 
     const payload = {
       nome: nome.trim(),
-      tipoDesconto: exibirApenasConsolidado ? 'fixo' : tipoDesconto,
-      aplicarAllAngle: exibirApenasConsolidado ? false : aplicarAllAngle,
+      tipoDesconto: isSpecialConsolidado ? 'fixo' : tipoDesconto,
+      aplicarAllAngle: isSpecialConsolidado ? false : aplicarAllAngle,
       porcentagemAllAngle: pctAllAngle,
-      aplicarEquipe: exibirApenasConsolidado ? false : aplicarEquipe,
+      aplicarEquipe: isSpecialConsolidado ? false : aplicarEquipe,
       porcentagemEquipe: pctEquipe,
       observacao: observacao.trim() || undefined,
       exibirApenasConsolidado,
       valorConsolidadoRelatorio: exibirApenasConsolidado ? valRelatorio : undefined,
+      descontarApenasConsolidado,
+      tipoDescontoConsolidado: descontarApenasConsolidado ? tipoDescontoConsolidado : undefined,
+      valorDescontoConsolidado: descontarApenasConsolidado ? valDescontoConsolidado : undefined,
     };
 
     if (editingRule) {
@@ -214,7 +233,18 @@ export const TaxasDescontosView: React.FC = () => {
                 </p>
               )}
 
-              {rule.exibirApenasConsolidado ? (
+              {rule.descontarApenasConsolidado ? (
+                <div className="space-y-2.5 my-4 bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-emerald-800">Desconto do Relatório:</span>
+                    <span className="font-mono font-black text-emerald-700 text-sm">
+                      {rule.tipoDescontoConsolidado === 'porcentagem' 
+                        ? `${rule.valorDescontoConsolidado}% do Bruto`
+                        : `R$ ${(rule.valorDescontoConsolidado || 0).toFixed(2).replace('.', ',')}`}
+                    </span>
+                  </div>
+                </div>
+              ) : rule.exibirApenasConsolidado ? (
                 <div className="space-y-2.5 my-4 bg-slate-50 p-3 rounded-2xl border border-slate-100">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-slate-600">Valor Fixo do Relatório:</span>
@@ -387,15 +417,35 @@ export const TaxasDescontosView: React.FC = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-2 py-1">
+                <div className="flex flex-col gap-2 py-1">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={exibirApenasConsolidado}
-                      onChange={(e) => setExibirApenasConsolidado(e.target.checked)}
+                      onChange={(e) => {
+                        setExibirApenasConsolidado(e.target.checked);
+                        if (e.target.checked) {
+                          setDescontarApenasConsolidado(false);
+                        }
+                      }}
                       className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
                     />
                     <span className="text-xs font-bold text-slate-700">Exibir apenas no Demonstrativo Consolidado</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={descontarApenasConsolidado}
+                      onChange={(e) => {
+                        setDescontarApenasConsolidado(e.target.checked);
+                        if (e.target.checked) {
+                          setExibirApenasConsolidado(false);
+                        }
+                      }}
+                      className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                    />
+                    <span className="text-xs font-bold text-slate-700">Descontar apenas no Demonstrativo Consolidado</span>
                   </label>
                 </div>
 
@@ -418,6 +468,58 @@ export const TaxasDescontosView: React.FC = () => {
                     </div>
                     <p className="text-[10px] text-indigo-600 font-bold">
                       Este valor fixo não será deduzido de nenhum membro ou parceiro individualmente, servindo apenas para abater o Saldo Líquido Final para a All Angle.
+                    </p>
+                  </div>
+                ) : descontarApenasConsolidado ? (
+                  <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl space-y-3">
+                    <span className="text-[10px] text-emerald-850 font-extrabold uppercase tracking-wide block">
+                      Configuração de Desconto do Demonstrativo <span className="text-rose-500">*</span>
+                    </span>
+                    
+                    <div className="grid grid-cols-2 gap-2 bg-white p-1 rounded-xl border border-emerald-200">
+                      <button
+                        type="button"
+                        onClick={() => setTipoDescontoConsolidado('porcentagem')}
+                        className={`py-1.5 text-xs font-black uppercase tracking-wider rounded-lg cursor-pointer transition-all ${
+                          tipoDescontoConsolidado === 'porcentagem'
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'text-slate-500 hover:text-slate-800 font-bold'
+                        }`}
+                      >
+                        Porcentagem (%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTipoDescontoConsolidado('fixo')}
+                        className={`py-1.5 text-xs font-black uppercase tracking-wider rounded-lg cursor-pointer transition-all ${
+                          tipoDescontoConsolidado === 'fixo'
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'text-slate-500 hover:text-slate-800 font-bold'
+                        }`}
+                      >
+                        Valor Fixo (R$)
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2 pl-3">
+                      <span className="text-xs font-black text-slate-400 uppercase font-sans">
+                        {tipoDescontoConsolidado === 'fixo' ? 'Valor Desconto:' : 'Porcentagem:'}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={valorDescontoConsolidado}
+                        onChange={(e) => setValorDescontoConsolidado(e.target.value)}
+                        placeholder="0,00"
+                        className="flex-1 min-w-0 bg-transparent border-0 p-0 text-xs font-mono font-black text-slate-900 focus:ring-0 text-right"
+                      />
+                      <span className="text-xs font-bold text-emerald-800 pr-1">
+                        {tipoDescontoConsolidado === 'fixo' ? 'R$' : '%'}
+                      </span>
+                    </div>
+                    
+                    <p className="text-[10px] text-emerald-800 font-bold">
+                      Este desconto será calculado em cima do Valor Bruto no demonstrativo consolidado, aparecendo como uma linha dedutiva para abater o Saldo Líquido Final para a All Angle.
                     </p>
                   </div>
                 ) : (
