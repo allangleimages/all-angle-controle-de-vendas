@@ -850,7 +850,7 @@ export const RelatoriosView: React.FC = () => {
   // Combined transactions based on period configurations (Visão Anual vs specific month vs custom date range)
   const filteredSales = useMemo(() => {
     const isUserAdmin = currentUser.cargo === 'Admin';
-    return sales.filter(sale => {
+    const rawFiltered = sales.filter(sale => {
       if (sale.status === 'Archived') return false;
       if (sale.status === 'Pendente') return false;
 
@@ -880,7 +880,8 @@ export const RelatoriosView: React.FC = () => {
 
       // NEW FILTER: Forma de Pagamento
       if (selectedPaymentMethod !== 'all') {
-        const hasPaymentMethod = sale.pagamentos && sale.pagamentos.some(p => p.forma === selectedPaymentMethod);
+        const hasPaymentMethod = (sale.pagamentos && sale.pagamentos.some(p => p.forma === selectedPaymentMethod)) ||
+          ((!sale.pagamentos || sale.pagamentos.length === 0) && (sale.formaPagamento === selectedPaymentMethod || (!sale.formaPagamento && selectedPaymentMethod === 'PIX')));
         if (!hasPaymentMethod) return false;
       }
 
@@ -897,6 +898,31 @@ export const RelatoriosView: React.FC = () => {
 
       return true;
     });
+
+    // If selectedPaymentMethod is active, project matching portion of the split payments
+    if (selectedPaymentMethod !== 'all') {
+      return rawFiltered.map(sale => {
+        if (sale.pagamentos && sale.pagamentos.length > 0) {
+          const matchingPayments = sale.pagamentos.filter(p => p.forma === selectedPaymentMethod);
+          if (matchingPayments.length > 0) {
+            const matchingPaymentsSum = matchingPayments.reduce((acc, p) => acc + (p.valor || 0), 0);
+            const totalPaymentsSum = sale.pagamentos.reduce((acc, p) => acc + (p.valor || 0), 0);
+            const ratio = totalPaymentsSum > 0 ? matchingPaymentsSum / totalPaymentsSum : 1.0;
+
+            return {
+              ...sale,
+              valorTotal: matchingPaymentsSum,
+              valorBruto: (sale.valorBruto || 0) * ratio,
+              descontoManual: (sale.descontoManual || 0) * ratio,
+              pagamentos: matchingPayments,
+            };
+          }
+        }
+        return sale;
+      });
+    }
+
+    return rawFiltered;
   }, [sales, selectedYear, selectedMonth, isAnnualView, selectedActivityId, selectedVendedorId, currentUser, useCustomDateRange, startDate, endDate, selectedPaymentMethod, selectedTaxId]);
 
   // Paid sales under selections
