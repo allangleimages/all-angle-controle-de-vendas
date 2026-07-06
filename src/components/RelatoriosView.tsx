@@ -625,7 +625,7 @@ export const RelatoriosView: React.FC = () => {
     if (financialTotals.consolidadoDiscountsList && financialTotals.consolidadoDiscountsList.length > 0) {
       financialTotals.consolidadoDiscountsList.forEach(({ nome, valor, tipo, taxaPct }) => {
         const pctLabel = tipo === 'porcentagem' ? ` (${taxaPct}%)` : '';
-        csvContent += `(-) ${nome}${pctLabel}:;-` + valor.toFixed(2).replace('.', ',') + `\r\n`;
+        csvContent += `(-) ${nome}${pctLabel}:;${valor.toFixed(2).replace('.', ',')}\r\n`;
       });
     }
     csvContent += `(=) Saldo Líquido Final para ALL ANGLE:;${financialTotals.netRevenue.toFixed(2).replace('.', ',')}\r\n\r\n`;
