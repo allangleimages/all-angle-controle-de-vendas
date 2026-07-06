@@ -49,6 +49,14 @@ const getSalePaymentFormasString = (sale: any) => {
   return baseForma;
 };
 
+const getCanonicalPaymentForm = (forma: string): string => {
+  if (!forma) return 'PIX';
+  const f = forma.trim();
+  if (f === 'Cartão de Crédito' || f === 'PayPal') return 'Crédito à Vista';
+  if (f === 'Cartão de Débito') return 'Débito';
+  return f;
+};
+
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '';
   const cleanDate = dateStr.replace(/\//g, '-');
@@ -880,8 +888,8 @@ export const RelatoriosView: React.FC = () => {
 
       // NEW FILTER: Forma de Pagamento
       if (selectedPaymentMethod !== 'all') {
-        const hasPaymentMethod = (sale.pagamentos && sale.pagamentos.some(p => p.forma === selectedPaymentMethod)) ||
-          ((!sale.pagamentos || sale.pagamentos.length === 0) && (sale.formaPagamento === selectedPaymentMethod || (!sale.formaPagamento && selectedPaymentMethod === 'PIX')));
+        const hasPaymentMethod = (sale.pagamentos && sale.pagamentos.some(p => getCanonicalPaymentForm(p.forma) === selectedPaymentMethod)) ||
+          ((!sale.pagamentos || sale.pagamentos.length === 0) && (getCanonicalPaymentForm(sale.formaPagamento) === selectedPaymentMethod || (!sale.formaPagamento && selectedPaymentMethod === 'PIX')));
         if (!hasPaymentMethod) return false;
       }
 
@@ -903,7 +911,7 @@ export const RelatoriosView: React.FC = () => {
     if (selectedPaymentMethod !== 'all') {
       return rawFiltered.map(sale => {
         if (sale.pagamentos && sale.pagamentos.length > 0) {
-          const matchingPayments = sale.pagamentos.filter(p => p.forma === selectedPaymentMethod);
+          const matchingPayments = sale.pagamentos.filter(p => getCanonicalPaymentForm(p.forma) === selectedPaymentMethod);
           if (matchingPayments.length > 0) {
             const matchingPaymentsSum = matchingPayments.reduce((acc, p) => acc + (p.valor || 0), 0);
             const totalPaymentsSum = sale.pagamentos.reduce((acc, p) => acc + (p.valor || 0), 0);
@@ -1354,15 +1362,15 @@ export const RelatoriosView: React.FC = () => {
 
   // DISTRIBUTION DATA: Formas de Pagamento
   const paymentMethodsDistribution = useMemo(() => {
-    const distribution: Record<string, number> = { 'PIX': 0, 'Cartão de Crédito': 0, 'Dinheiro': 0 };
+    const distribution: Record<string, number> = { 'PIX': 0, 'Crédito à Vista': 0, 'Dinheiro': 0 };
     paidSales.forEach(s => {
       if (s.pagamentos && s.pagamentos.length > 0) {
         s.pagamentos.forEach(p => {
-          const method = p.forma === 'PayPal' ? 'Cartão de Crédito' : p.forma;
+          const method = getCanonicalPaymentForm(p.forma);
           distribution[method] = (distribution[method] || 0) + (p.valor || 0);
         });
       } else {
-        const method = s.formaPagamento === 'PayPal' ? 'Cartão de Crédito' : s.formaPagamento;
+        const method = getCanonicalPaymentForm(s.formaPagamento);
         distribution[method] = (distribution[method] || 0) + (s.valorTotal || 0);
       }
     });
