@@ -789,11 +789,11 @@ export const RelatoriosView: React.FC = () => {
     const metricsByMonth = Array.from({ length: 12 }, (_, i) => {
       const monthNum = i + 1;
       
-      // Filter sales for this specific month
+      // Filter sales for this specific month (strictly paid sales)
       const monthSales = sales.filter(sale => {
-        if (sale.status === 'Archived') return false;
+        if (sale.status !== 'Pago') return false;
         
-        const refDate = (sale.status === 'Pago' && sale.dataPagamento) ? sale.dataPagamento : sale.data;
+        const refDate = sale.dataPagamento || sale.data;
         const dateParts = refDate.split('-');
         if (dateParts.length < 3) return false;
         const yr = parseInt(dateParts[0], 10);
@@ -859,10 +859,9 @@ export const RelatoriosView: React.FC = () => {
   const filteredSales = useMemo(() => {
     const isUserAdmin = currentUser.cargo === 'Admin';
     const rawFiltered = sales.filter(sale => {
-      if (sale.status === 'Archived') return false;
-      if (sale.status === 'Pendente') return false;
+      if (sale.status !== 'Pago') return false;
 
-      const refDate = (sale.status === 'Pago' && sale.dataPagamento) ? sale.dataPagamento : sale.data;
+      const refDate = sale.dataPagamento || sale.data;
 
       // Date Filtering
       if (useCustomDateRange && startDate && endDate) {
@@ -1100,9 +1099,27 @@ export const RelatoriosView: React.FC = () => {
 
   // TAXA DE RECUPERAÇÃO DE CARRINHOS: strictly compute ONLY transactions that explicitly entered the system as "Abandonada" and became "Pago"
   const cartRecoveryTotals = useMemo(() => {
+    const isUserAdmin = currentUser.cargo === 'Admin';
     // Only count Sales that entered the system as Abandonada (wasAbandoned = true) and are now Paid (Pago)
     const recoveredSales = paidSales.filter(s => s.wasAbandoned === true);
-    const abandonedSales = filteredSales.filter(s => s.status === 'Abandonada');
+    const abandonedSales = sales.filter(s => {
+      if (s.status !== 'Abandonada') return false;
+      if (!isUserAdmin && s.vendedorId !== currentUser.id) return false;
+      if (selectedActivityId !== 'all' && s.atividadeId !== selectedActivityId) return false;
+      if (selectedVendedorId !== 'all' && s.vendedorId !== selectedVendedorId) return false;
+      const refDate = s.data;
+      if (useCustomDateRange && startDate && endDate) {
+        if (refDate < startDate || refDate > endDate) return false;
+      } else {
+        const dateParts = refDate.split('-');
+        if (dateParts.length < 3) return false;
+        const yr = parseInt(dateParts[0], 10);
+        const mo = parseInt(dateParts[1], 10);
+        if (yr !== selectedYear) return false;
+        if (!isAnnualView && mo !== selectedMonth) return false;
+      }
+      return true;
+    });
     
     const recoveredCount = recoveredSales.length;
     const abandonedCount = abandonedSales.length;
@@ -1115,7 +1132,7 @@ export const RelatoriosView: React.FC = () => {
       recoveredCount,
       leadsCount
     };
-  }, [filteredSales, paidSales]);
+  }, [sales, paidSales, currentUser, selectedActivityId, selectedVendedorId, useCustomDateRange, startDate, endDate, selectedYear, isAnnualView, selectedMonth]);
 
   // TAXA DE DESPERDÍCIO DE FOTOS: percentage of sales that triggered the photo over-delivery warning.
   const photoOverdeliveryTotals = useMemo(() => {
