@@ -235,12 +235,14 @@ export const HomeView: React.FC = () => {
       parceiroId: sale.parceiroId || '',
       atividadeId: sale.atividadeId,
       formaPagamento: sale.formaPagamento || '',
-      status: sale.status,
+      status: sale.status === 'Archived' 
+        ? ((sale.valorTotal > 0 && sale.formaPagamento) ? 'Pago' : 'Abandonada') 
+        : (sale.status || 'Pendente'),
       fotosEnviadas: !sale.fotosEnviadas ? '' : String(sale.fotosEnviadas),
       fotosVendidas: !sale.fotosVendidas ? '' : String(sale.fotosVendidas),
       descontoManual: !sale.descontoManual ? '' : String(sale.descontoManual),
       notas: sale.notas || '',
-      dataPagamento: sale.dataPagamento || sale.data
+      dataPagamento: sale.dataPagamento || (sale.status === 'Pago' ? sale.data : (new Date().toISOString().split('T')[0]))
     });
     setCartItems(sale.sacolaItens || []);
 
@@ -296,6 +298,14 @@ export const HomeView: React.FC = () => {
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
       ];
       return `${day} de ${months[monthIndex]} de ${year}`;
+    }
+    return dateStr;
+  };
+
+  const formatShortDate = (dateStr: string) => {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
     return dateStr;
   };
@@ -1809,7 +1819,7 @@ export const HomeView: React.FC = () => {
                           // Accent borders
                           const statusAccentBorder = 
                             sale.status === 'Pago' ? 'border-l-8 border-l-emerald-500' :
-                            sale.status === 'Abandonada' ? 'border-l-8 border-l-rose-500' :
+                            (sale.status === 'Abandonada' || sale.status === 'Archived') ? 'border-l-8 border-l-rose-500' :
                             sale.status === 'Cancelado' ? 'border-l-8 border-l-slate-400' :
                             'border-l-8 border-l-amber-500';
 
@@ -1850,6 +1860,14 @@ export const HomeView: React.FC = () => {
                                     >
                                       <User className="w-3 h-3 shrink-0" />
                                       <span>Fotógrafo: <strong>{getTeammateName(sCollab)}</strong></span>
+                                    </span>
+                                  )}
+
+                                  {/* Recovery badge if original service date was in a different month */}
+                                  {sale.status === 'Pago' && sale.dataPagamento && sale.data && sale.data.substring(0, 7) !== sale.dataPagamento.substring(0, 7) && (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded uppercase">
+                                      <Calendar className="w-3 h-3 text-indigo-600 shrink-0" />
+                                      <span>Atendimento original: {formatShortDate(sale.data)}</span>
                                     </span>
                                   )}
 
@@ -1923,7 +1941,7 @@ export const HomeView: React.FC = () => {
                                     <span className="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 uppercase tracking-wider">
                                       PAGO
                                     </span>
-                                  ) : sale.status === 'Abandonada' ? (
+                                  ) : (sale.status === 'Abandonada' || sale.status === 'Archived') ? (
                                     <span className="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black bg-rose-500/10 text-rose-750 border border-rose-500/30 uppercase tracking-wider">
                                       ABANDONADA
                                     </span>
@@ -2021,7 +2039,7 @@ export const HomeView: React.FC = () => {
 
                                 const statusAccentBorder = 
                                   sale.status === 'Pago' ? 'border-l-8 border-l-emerald-500' :
-                                  sale.status === 'Abandonada' ? 'border-l-8 border-l-rose-500' :
+                                  (sale.status === 'Abandonada' || sale.status === 'Archived') ? 'border-l-8 border-l-rose-500' :
                                   sale.status === 'Cancelado' ? 'border-l-8 border-l-slate-400' :
                                   'border-l-8 border-l-amber-500';
 
@@ -2058,6 +2076,14 @@ export const HomeView: React.FC = () => {
                                         </span>
                                       )}
 
+                                      {/* Recovery badge if original service date was in a different month */}
+                                      {sale.status === 'Pago' && sale.dataPagamento && sale.data && sale.data.substring(0, 7) !== sale.dataPagamento.substring(0, 7) && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded uppercase">
+                                          <Calendar className="w-3 h-3 text-indigo-600 shrink-0" />
+                                          <span>Atendimento: {formatShortDate(sale.data)}</span>
+                                        </span>
+                                      )}
+
                                       {/* Attention recovery alert for over 7 days abandoned */}
                                       {showRecoveryAlert && (
                                         <span className="inline-flex items-center gap-1 text-[9px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-full uppercase shadow-xs animate-pulse">
@@ -2075,7 +2101,7 @@ export const HomeView: React.FC = () => {
                                           <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 uppercase tracking-wider">
                                             PAGO
                                           </span>
-                                        ) : sale.status === 'Abandonada' ? (
+                                        ) : (sale.status === 'Abandonada' || sale.status === 'Archived') ? (
                                           <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500/10 text-rose-750 border border-rose-500/30 uppercase tracking-wider">
                                             ABANDONADA
                                           </span>
@@ -2868,10 +2894,11 @@ export const HomeView: React.FC = () => {
                           value={formData.status}
                           onChange={(e) => {
                             const newStatus = e.target.value;
+                            const todayStr = new Date().toISOString().split('T')[0];
                             setFormData(prev => ({
                               ...prev,
                               status: newStatus,
-                              dataPagamento: newStatus === 'Pago' && !prev.dataPagamento ? prev.data : prev.dataPagamento
+                              dataPagamento: newStatus === 'Pago' ? (prev.dataPagamento || todayStr) : prev.dataPagamento
                             }));
                           }}
                           className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-sm rounded-xl block font-bold text-center mt-1 text-white animate-fade-in cursor-pointer"
@@ -3384,7 +3411,7 @@ export const HomeView: React.FC = () => {
                           <div>
                             {detailSale.status === 'Pago' ? (
                               <span className="px-2.5 py-1 text-[9px] font-black bg-emerald-400/20 text-emerald-300 border border-emerald-500 rounded uppercase">PAGO</span>
-                            ) : detailSale.status === 'Abandonada' ? (
+                            ) : (detailSale.status === 'Abandonada' || detailSale.status === 'Archived') ? (
                               <span className="px-2.5 py-1 text-[9px] font-black bg-rose-400/20 text-rose-300 border border-rose-500 rounded uppercase">ABANDONADA</span>
                             ) : detailSale.status === 'Cancelado' ? (
                               <span className="px-2.5 py-1 text-[9px] font-black bg-slate-700/30 text-slate-400 border border-white/10 rounded uppercase">CANCELADO</span>
