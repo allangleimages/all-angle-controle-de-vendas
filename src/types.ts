@@ -97,9 +97,16 @@ export interface PricingTier {
   precoUnitario: number;
 }
 
+export interface PackageActivityPartnerLink {
+  atividadeId: string;
+  parceiroId?: string;
+}
+
 export interface Package {
   id: string;
-  atividadeId: string; // Activity relation
+  atividadeId: string; // Primary activity relation
+  atividadesIds?: string[]; // All linked activity IDs
+  vinculos?: PackageActivityPartnerLink[]; // Multiple Activity + Partner association options
   nomePacote: string;
   tipoPreco: 'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo' | 'SemEstrutura';
   precoStandard?: number; // Price per person for standard or price per photo for 'Foto'

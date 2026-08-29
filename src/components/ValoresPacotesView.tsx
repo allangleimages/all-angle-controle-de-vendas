@@ -33,10 +33,15 @@ export const ValoresPacotesView: React.FC = () => {
   }, [selectedPackage]);
 
   // Form states
-  const [atividadeId, setAtividadeId] = useState('');
+  interface VinculoState {
+    atividadeId: string;
+    parceiroId: string;
+  }
+  const [vinculos, setVinculos] = useState<VinculoState[]>([
+    { atividadeId: '', parceiroId: '' }
+  ]);
   const [nomePacote, setNomePacote] = useState('');
   const [tipoPreco, setTipoPreco] = useState<'Standard' | 'Especial' | 'Foto' | 'ProgressivoPessoa' | 'FixoMaisProgressivo' | 'SemEstrutura'>('Standard');
-  const [parceiroId, setParceiroId] = useState('');
 
   // Pricing fields
   const [precoStandard, setPrecoStandard] = useState('200'); // used for Standard (Per Person) or Foto (Per Photo unit rate)
@@ -122,10 +127,27 @@ export const ValoresPacotesView: React.FC = () => {
     return '#2563eb';
   };
 
+  const handleAddVinculo = () => {
+    setVinculos(prev => [...prev, { atividadeId: '', parceiroId: '' }]);
+  };
+
+  const handleRemoveVinculo = (index: number) => {
+    if (vinculos.length <= 1) return;
+    setVinculos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateVinculoAtividade = (index: number, actId: string) => {
+    setVinculos(prev => prev.map((v, i) => i === index ? { ...v, atividadeId: actId } : v));
+  };
+
+  const handleUpdateVinculoParceiro = (index: number, partId: string) => {
+    setVinculos(prev => prev.map((v, i) => i === index ? { ...v, parceiroId: partId } : v));
+  };
+
   const handleOpenCreateModal = () => {
     setError(null);
     setEditingPackage(null);
-    setAtividadeId('');
+    setVinculos([{ atividadeId: '', parceiroId: '' }]);
     setNomePacote('');
     setTipoPreco('Standard');
     setPrecoStandard('200');
@@ -133,7 +155,6 @@ export const ValoresPacotesView: React.FC = () => {
     setMaxFotosEnviadas('20');
     setDescricao('');
     setMediaRef('');
-    setParceiroId('');
     setCorTag('#2563eb');
     setTiers([
       { minFotos: 1, maxFotos: 10, precoUnitario: 15 },
@@ -158,7 +179,25 @@ export const ValoresPacotesView: React.FC = () => {
   const handleOpenEditModal = (pkg: Package) => {
     setError(null);
     setEditingPackage(pkg);
-    setAtividadeId(pkg.atividadeId);
+    
+    // Load vinculos list
+    if (pkg.vinculos && pkg.vinculos.length > 0) {
+      setVinculos(pkg.vinculos.map(v => ({
+        atividadeId: v.atividadeId || '',
+        parceiroId: v.parceiroId || ''
+      })));
+    } else if (pkg.atividadesIds && pkg.atividadesIds.length > 0) {
+      setVinculos(pkg.atividadesIds.map(actId => ({
+        atividadeId: actId,
+        parceiroId: pkg.parceiroId || ''
+      })));
+    } else {
+      setVinculos([{
+        atividadeId: pkg.atividadeId || '',
+        parceiroId: pkg.parceiroId || ''
+      }]);
+    }
+
     setNomePacote(pkg.nomePacote);
     setTipoPreco(pkg.tipoPreco);
     setPrecoStandard(pkg.precoStandard?.toString() || '0');
@@ -166,7 +205,6 @@ export const ValoresPacotesView: React.FC = () => {
     setMaxFotosEnviadas(pkg.maxFotosEnviadas?.toString() || '0');
     setDescricao(pkg.descricao || '');
     setMediaRef(pkg.mediaRef || '');
-    setParceiroId(pkg.parceiroId || '');
     setCorTag(pkg.corTag || '#2563eb');
     setTiers(pkg.tiers || [
       { minFotos: 1, maxFotos: 10, precoUnitario: 15 },
@@ -191,7 +229,24 @@ export const ValoresPacotesView: React.FC = () => {
   const handleDuplicatePackage = (pkg: Package) => {
     setError(null);
     setEditingPackage(null); // Set to null so it creates a new package!
-    setAtividadeId(pkg.atividadeId);
+
+    if (pkg.vinculos && pkg.vinculos.length > 0) {
+      setVinculos(pkg.vinculos.map(v => ({
+        atividadeId: v.atividadeId || '',
+        parceiroId: v.parceiroId || ''
+      })));
+    } else if (pkg.atividadesIds && pkg.atividadesIds.length > 0) {
+      setVinculos(pkg.atividadesIds.map(actId => ({
+        atividadeId: actId,
+        parceiroId: pkg.parceiroId || ''
+      })));
+    } else {
+      setVinculos([{
+        atividadeId: pkg.atividadeId || '',
+        parceiroId: pkg.parceiroId || ''
+      }]);
+    }
+
     setNomePacote(`${pkg.nomePacote} (Cópia)`);
     setTipoPreco(pkg.tipoPreco);
     setPrecoStandard(pkg.precoStandard?.toString() || '0');
@@ -199,7 +254,6 @@ export const ValoresPacotesView: React.FC = () => {
     setMaxFotosEnviadas(pkg.maxFotosEnviadas?.toString() || '0');
     setDescricao(pkg.descricao || '');
     setMediaRef(pkg.mediaRef || '');
-    setParceiroId(pkg.parceiroId || '');
     setCorTag(pkg.corTag || '#2563eb');
     setTiers(pkg.tiers ? pkg.tiers.map(t => ({ ...t })) : [
       { minFotos: 1, maxFotos: 10, precoUnitario: 15 },
@@ -267,8 +321,10 @@ export const ValoresPacotesView: React.FC = () => {
         setError('Por favor, preencha o nome do pacote comercial!');
         return;
       }
-      if (!atividadeId) {
-        setError('Por favor, selecione uma atividade principal associada para prosseguir!');
+
+      const validVinculos = vinculos.filter(v => v.atividadeId && v.atividadeId.trim() !== '');
+      if (validVinculos.length === 0) {
+        setError('Por favor, selecione pelo menos uma atividade associada!');
         return;
       }
 
@@ -353,13 +409,23 @@ export const ValoresPacotesView: React.FC = () => {
         }
       }
 
+      const primaryAtividadeId = validVinculos[0].atividadeId;
+      const primaryParceiroId = validVinculos[0].parceiroId || undefined;
+      const allAtividadesIds: string[] = Array.from(new Set(validVinculos.map(v => v.atividadeId)));
+      const formattedVinculos = validVinculos.map(v => ({
+        atividadeId: v.atividadeId,
+        parceiroId: v.parceiroId || undefined
+      }));
+
       const hasHistory = editingPackage ? checkPackageHasHistory(editingPackage.id) : false;
 
       // Build package payload based on pricing type architecture
       const payload: Partial<Package> = {
-        atividadeId,
+        atividadeId: primaryAtividadeId,
+        atividadesIds: allAtividadesIds,
+        vinculos: formattedVinculos,
         nomePacote: nomePacote.trim(),
-        parceiroId: parceiroId || undefined,
+        parceiroId: primaryParceiroId,
         descricao: descricao.trim(),
         mediaRef: mediaRef.trim(),
         mensagemAbandono: mensagemAbandono.trim(),
@@ -392,7 +458,9 @@ export const ValoresPacotesView: React.FC = () => {
         updatePackage(editingPackage.id, payload);
       } else {
         addPackage({
-          atividadeId,
+          atividadeId: primaryAtividadeId,
+          atividadesIds: allAtividadesIds,
+          vinculos: formattedVinculos,
           nomePacote: nomePacote.trim(),
           tipoPreco,
           precoStandard: (tipoPreco === 'Standard' || tipoPreco === 'Foto') ? parseFormattedFloat(precoStandard) || 0 : undefined,
@@ -413,7 +481,7 @@ export const ValoresPacotesView: React.FC = () => {
           vendaDireta,
           incluirMetricaFotos,
           mensagemAbandono: mensagemAbandono.trim(),
-          parceiroId: parceiroId || undefined,
+          parceiroId: primaryParceiroId,
           descricao: descricao.trim(),
           mediaRef: mediaRef.trim(),
           corTag,
@@ -470,9 +538,20 @@ export const ValoresPacotesView: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activePackages.map(pkg => {
-              const act = activities.find(a => a.id === pkg.atividadeId);
-              const actName = act?.nomeAtividade || 'Sem Atividade Relacionada';
-              const partnerName = partners.find(p => p.id === pkg.parceiroId)?.nomeParceiro;
+              const linkedActs = pkg.vinculos && pkg.vinculos.length > 0
+                ? pkg.vinculos.map(v => ({
+                    act: activities.find(a => a.id === v.atividadeId),
+                    partner: partners.find(p => p.id === v.parceiroId)
+                  }))
+                : (pkg.atividadesIds && pkg.atividadesIds.length > 0)
+                ? pkg.atividadesIds.map(actId => ({
+                    act: activities.find(a => a.id === actId),
+                    partner: partners.find(p => p.id === pkg.parceiroId)
+                  }))
+                : [{
+                    act: activities.find(a => a.id === pkg.atividadeId),
+                    partner: partners.find(p => p.id === pkg.parceiroId)
+                  }];
 
               // Color-coded left border and text highlights depending on pricing structure
               const pricingVisuals = 
@@ -509,19 +588,26 @@ export const ValoresPacotesView: React.FC = () => {
                     <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
                       <div className="space-y-1.5 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span 
-                            className="inline-flex items-center gap-1 text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider transition-all"
-                            style={(() => {
-                              const pkgColor = getPackageColor(pkg);
-                              return {
-                                backgroundColor: `${pkgColor}12`,
-                                borderColor: `${pkgColor}25`,
-                                color: pkgColor
-                              };
-                            })()}
-                          >
-                            {actName}
-                          </span>
+                          {linkedActs.map((link, lIdx) => {
+                            const actTitle = link.act?.nomeAtividade || 'Atividade';
+                            return (
+                              <span 
+                                key={lIdx}
+                                className="inline-flex items-center gap-1 text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider transition-all"
+                                style={(() => {
+                                  const pkgColor = getPackageColor(pkg);
+                                  return {
+                                    backgroundColor: `${pkgColor}12`,
+                                    borderColor: `${pkgColor}25`,
+                                    color: pkgColor
+                                  };
+                                })()}
+                              >
+                                {actTitle}
+                                {link.partner && <span className="opacity-75 font-normal">({link.partner.nomeParceiro})</span>}
+                              </span>
+                            );
+                          })}
                         </div>
                         <h4 className="font-extrabold text-[#0e2438] block tracking-tight text-sm uppercase leading-tight line-clamp-2">
                           {pkg.nomePacote}
@@ -631,24 +717,28 @@ export const ValoresPacotesView: React.FC = () => {
                           };
                         })()}
                       >
-                        <span className="text-slate-400 text-[8px] uppercase font-bold">Atividade Comercial:</span>
+                        <span className="text-slate-400 text-[8px] uppercase font-bold">
+                          {linkedActs.length > 1 ? `${linkedActs.length} Atividades:` : 'Atividade Comercial:'}
+                        </span>
                         <span 
-                          className="font-extrabold uppercase text-[9px]"
+                          className="font-extrabold uppercase text-[9px] truncate max-w-[140px]"
                           style={{ color: getPackageColor(pkg) }}
                         >
-                          {actName}
+                          {linkedActs.map(l => l.act?.nomeAtividade || 'Atividade').join(', ')}
                         </span>
                       </div>
 
-                      {partnerName ? (
+                      {linkedActs.some(l => l.partner) ? (
                         <div className="bg-emerald-50 text-emerald-850 border border-emerald-150 px-3 py-2 rounded-xl flex items-center justify-between text-[10px] font-bold">
-                          <span className="text-slate-400 text-[8px] uppercase font-bold">Parceiro Exclusivo:</span>
-                          <span className="font-extrabold uppercase text-[9px] text-emerald-900 truncate max-w-[130px]">{partnerName}</span>
+                          <span className="text-slate-400 text-[8px] uppercase font-bold">Parceiro(s):</span>
+                          <span className="font-extrabold uppercase text-[9px] text-emerald-900 truncate max-w-[130px]">
+                            {linkedActs.filter(l => l.partner).map(l => l.partner?.nomeParceiro).join(', ')}
+                          </span>
                         </div>
                       ) : (
                         <div className="bg-slate-50 text-slate-500 border border-slate-150 px-3 py-2 rounded-xl flex items-center justify-between text-[9px] font-bold">
                           <span className="text-slate-400 text-[8px] uppercase font-bold">Distribuição:</span>
-                          <span className="font-bold underline text-slate-600">Livre (Qualquer Parceiro)</span>
+                          <span className="font-bold underline text-slate-600">Livre (Sem Parceiro Exclusivo)</span>
                         </div>
                       )}
                     </div>
@@ -748,19 +838,39 @@ export const ValoresPacotesView: React.FC = () => {
                     <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
                       ID: {renderedSelectedPackage.id.split('-')[1] || renderedSelectedPackage.id}
                     </span>
-                    <span 
-                      className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full border transition-all"
-                      style={(() => {
-                        const pkgColor = getPackageColor(renderedSelectedPackage);
-                        return {
-                          backgroundColor: `${pkgColor}12`,
-                          borderColor: `${pkgColor}25`,
-                          color: pkgColor
-                        };
-                      })()}
-                    >
-                      Atividade: {activities.find(a => a.id === renderedSelectedPackage.atividadeId)?.nomeAtividade || 'Standard'}
-                    </span>
+                    {(() => {
+                      const linked = renderedSelectedPackage.vinculos && renderedSelectedPackage.vinculos.length > 0
+                        ? renderedSelectedPackage.vinculos.map(v => ({
+                            act: activities.find(a => a.id === v.atividadeId),
+                            partner: partners.find(p => p.id === v.parceiroId)
+                          }))
+                        : (renderedSelectedPackage.atividadesIds && renderedSelectedPackage.atividadesIds.length > 0)
+                        ? renderedSelectedPackage.atividadesIds.map(actId => ({
+                            act: activities.find(a => a.id === actId),
+                            partner: partners.find(p => p.id === renderedSelectedPackage.parceiroId)
+                          }))
+                        : [{
+                            act: activities.find(a => a.id === renderedSelectedPackage.atividadeId),
+                            partner: partners.find(p => p.id === renderedSelectedPackage.parceiroId)
+                          }];
+
+                      return linked.map((item, idx) => (
+                        <span 
+                          key={idx}
+                          className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full border transition-all"
+                          style={(() => {
+                            const pkgColor = getPackageColor(renderedSelectedPackage);
+                            return {
+                              backgroundColor: `${pkgColor}12`,
+                              borderColor: `${pkgColor}25`,
+                              color: pkgColor
+                            };
+                          })()}
+                        >
+                          Atividade: {item.act?.nomeAtividade || 'Atividade'} {item.partner ? `(Parceiro: ${item.partner.nomeParceiro})` : ''}
+                        </span>
+                      ));
+                    })()}
                   </div>
                 </div>
 
@@ -1119,59 +1229,88 @@ export const ValoresPacotesView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Associated Activity */}
-                    <div className="space-y-1.5 font-bold">
-                      <div className="flex justify-between items-center pl-2 pr-1">
-                        <label className="text-[10px] font-extrabold text-white/40 uppercase block tracking-wider">ATIVIDADE PRINCIPAL ASSOCIADA</label>
+                    {/* Dynamic List of Associated Activities & Partners */}
+                    <div className="col-span-1 md:col-span-2 space-y-3 bg-white/5 p-5 rounded-2xl border border-white/10">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-white/10">
+                        <div>
+                          <label className="text-[11px] font-black text-white uppercase block tracking-wider">
+                            ATIVIDADES E PARCEIROS VINCULADOS
+                          </label>
+                          <p className="text-[10px] text-white/60 font-semibold">
+                            Configure uma ou mais atividades e parceiros opcionais onde este pacote estará disponível para lançamento.
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setIsOpen(false);
-                            window.dispatchEvent(new CustomEvent('navigate-to', { detail: 'atividades' }));
-                          }}
-                          className="text-[9px] text-[#38bdf8] hover:underline cursor-pointer"
+                          onClick={handleAddVinculo}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl text-[10px] uppercase transition cursor-pointer shadow-xs self-start sm:self-auto shrink-0 active:scale-95"
                         >
-                          + Adicionar nova atividade
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Adicionar nova atividade</span>
                         </button>
                       </div>
-                      <select
-                        value={atividadeId}
-                        onChange={(e) => setAtividadeId(e.target.value)}
-                        disabled={editingPackage && checkPackageHasHistory(editingPackage.id)}
-                        className="w-full bg-slate-950 p-4 border border-white/10 rounded-2xl text-white font-extrabold focus:outline-none text-xs cursor-pointer"
-                      >
-                        <option value="" className="bg-slate-950 text-white font-bold">-- Escolher Atividade --</option>
-                        {activities.map(act => (
-                          <option key={act.id} value={act.id} className="bg-slate-900 text-white font-bold">{act.nomeAtividade.toUpperCase()}</option>
-                        ))}
-                      </select>
-                    </div>
 
-                    {/* Associated Partner (Optional) */}
-                    <div className="space-y-1.5 font-bold">
-                      <div className="flex justify-between items-center pl-2 pr-1">
-                        <label className="text-[10px] font-extrabold text-white/40 uppercase block tracking-wider">PARCEIRO RELACIONADO (OPCIONAL)</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsOpen(false);
-                            window.dispatchEvent(new CustomEvent('navigate-to', { detail: 'parceiros' }));
-                          }}
-                          className="text-[9px] text-[#38bdf8] hover:underline cursor-pointer"
-                        >
-                          + Adicionar novo parceiro
-                        </button>
-                      </div>
-                      <select
-                        value={parceiroId}
-                        onChange={(e) => setParceiroId(e.target.value)}
-                        className="w-full bg-slate-950 p-4 border border-white/10 rounded-2xl text-white font-extrabold focus:outline-none text-xs cursor-pointer"
-                      >
-                        <option value="" className="bg-[#0e2438] text-white font-bold">-- Sem parceria exclusiva vinculada --</option>
-                        {partners.map(p => (
-                          <option key={p.id} value={p.id} className="bg-[#0e2438] text-white font-bold">{p.nomeParceiro.toUpperCase()}</option>
+                      <div className="space-y-3 pt-1">
+                        {vinculos.map((item, idx) => (
+                          <div 
+                            key={idx} 
+                            className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3.5 bg-slate-950/80 rounded-xl border border-white/10"
+                          >
+                            {/* Atividade */}
+                            <div className="md:col-span-6 space-y-1.5">
+                              <label className="text-[9px] font-extrabold text-white/70 uppercase block tracking-wider">
+                                {idx === 0 ? 'ATIVIDADE PRINCIPAL' : `ATIVIDADE ADICIONAL #${idx + 1}`}
+                              </label>
+                              <select
+                                value={item.atividadeId}
+                                onChange={(e) => handleUpdateVinculoAtividade(idx, e.target.value)}
+                                disabled={idx === 0 && editingPackage && checkPackageHasHistory(editingPackage.id)}
+                                className="w-full bg-slate-900 p-3 border border-white/15 rounded-xl text-white font-extrabold focus:outline-none focus:border-indigo-400 text-xs cursor-pointer"
+                              >
+                                <option value="" className="bg-slate-950 text-white font-bold">-- Escolher Atividade --</option>
+                                {activities.map(act => (
+                                  <option key={act.id} value={act.id} className="bg-slate-900 text-white font-bold">
+                                    {act.nomeAtividade.toUpperCase()}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Parceiro */}
+                            <div className={`${vinculos.length > 1 ? 'md:col-span-5' : 'md:col-span-6'} space-y-1.5`}>
+                              <label className="text-[9px] font-extrabold text-white/70 uppercase block tracking-wider">
+                                PARCEIRO RELACIONADO (OPCIONAL)
+                              </label>
+                              <select
+                                value={item.parceiroId}
+                                onChange={(e) => handleUpdateVinculoParceiro(idx, e.target.value)}
+                                className="w-full bg-slate-900 p-3 border border-white/15 rounded-xl text-white font-extrabold focus:outline-none focus:border-indigo-400 text-xs cursor-pointer"
+                              >
+                                <option value="" className="bg-[#0e2438] text-white font-bold">-- Sem parceria exclusiva vinculada --</option>
+                                {partners.map(p => (
+                                  <option key={p.id} value={p.id} className="bg-[#0e2438] text-white font-bold">
+                                    {p.nomeParceiro.toUpperCase()}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Botão de Remover Linha */}
+                            {vinculos.length > 1 && (
+                              <div className="md:col-span-1 flex justify-end md:justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveVinculo(idx)}
+                                  title="Remover esta linha de atividade"
+                                  className="p-3 bg-rose-700 hover:bg-rose-800 text-white rounded-xl transition cursor-pointer font-black shrink-0 flex items-center justify-center shadow-xs active:scale-95"
+                                >
+                                  <Trash2 className="w-4 h-4 text-white" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         ))}
-                      </select>
+                      </div>
                     </div>
 
                     {/* Radio Select structure */}

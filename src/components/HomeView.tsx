@@ -671,19 +671,31 @@ export const HomeView: React.FC = () => {
 
   // Automated partner locking logic
   const lockedPartnerId = useMemo(() => {
-    // 1. If currently selected package has a partner assigned
-    if (currentSelectedPackage && currentSelectedPackage.parceiroId) {
-      return currentSelectedPackage.parceiroId;
+    // 1. If currently selected package has a partner assigned for this activity
+    if (currentSelectedPackage) {
+      const activeVinculo = currentSelectedPackage.vinculos?.find(v => v.atividadeId === formData.atividadeId);
+      if (activeVinculo && activeVinculo.parceiroId) {
+        return activeVinculo.parceiroId;
+      }
+      if (currentSelectedPackage.parceiroId) {
+        return currentSelectedPackage.parceiroId;
+      }
     }
     // 2. If any items in the basket have a partner assigned
     for (const item of cartItems) {
       const pkg = packages.find(p => p.id === item.pacoteId);
-      if (pkg && pkg.parceiroId) {
-        return pkg.parceiroId;
+      if (pkg) {
+        const activeVinculo = pkg.vinculos?.find(v => v.atividadeId === formData.atividadeId);
+        if (activeVinculo && activeVinculo.parceiroId) {
+          return activeVinculo.parceiroId;
+        }
+        if (pkg.parceiroId) {
+          return pkg.parceiroId;
+        }
       }
     }
     return null;
-  }, [currentSelectedPackage, cartItems, packages]);
+  }, [currentSelectedPackage, cartItems, packages, formData.atividadeId]);
 
   // Synchronize locked partner option with form value
   useEffect(() => {
@@ -2618,12 +2630,33 @@ export const HomeView: React.FC = () => {
                       <label className="text-[9px] font-black uppercase text-white/40 block mb-1">Selecione o Produto / Pacote</label>
                       <select
                         value={selectedPackageId}
-                        onChange={(e) => setSelectedPackageId(e.target.value)}
+                        onChange={(e) => {
+                          const newPkgId = e.target.value;
+                          setSelectedPackageId(newPkgId);
+                          if (newPkgId) {
+                            const chosenPkg = packages.find(p => p.id === newPkgId);
+                            if (chosenPkg) {
+                              const activeVinculo = chosenPkg.vinculos?.find(v => v.atividadeId === formData.atividadeId);
+                              const linkedPartner = activeVinculo?.parceiroId || chosenPkg.parceiroId;
+                              if (linkedPartner && !formData.parceiroId) {
+                                setFormData(prev => ({ ...prev, parceiroId: linkedPartner }));
+                              }
+                            }
+                          }
+                        }}
                         className="w-full bg-[#1e293b] border border-white/10 px-3 py-2 text-xs rounded-xl text-white"
                       >
                         <option value="">Selecione o pacote associado...</option>
                         {packages
-                          .filter(pkg => (pkg.atividadeId === formData.atividadeId && !pkg.arquivado) || pkg.id === selectedPackageId)
+                          .filter(pkg => {
+                            if (pkg.id === selectedPackageId) return true;
+                            if (pkg.arquivado) return false;
+                            if (!formData.atividadeId) return true;
+                            const matchesPrimary = pkg.atividadeId === formData.atividadeId;
+                            const matchesArray = pkg.atividadesIds ? pkg.atividadesIds.includes(formData.atividadeId) : false;
+                            const matchesVinculos = pkg.vinculos ? pkg.vinculos.some(v => v.atividadeId === formData.atividadeId) : false;
+                            return matchesPrimary || matchesArray || matchesVinculos;
+                          })
                           .map(pkg => {
                             return (
                               <option key={pkg.id} value={pkg.id}>{pkg.nomePacote}</option>
