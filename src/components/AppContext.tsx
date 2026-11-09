@@ -304,6 +304,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
         }
+
+        // Ensure activities' membrosElegiveis are synchronized with collaborators' atividadesPermitidas
+        finalActivities = finalActivities.map(act => {
+          const currentMembros = act.membrosElegiveis ? [...act.membrosElegiveis] : [];
+          let changed = false;
+
+          finalUniqueCollabs.forEach(collab => {
+            if (collab.cargo === 'Admin') return;
+            const hasPermit = Array.isArray(collab.atividadesPermitidas) && collab.atividadesPermitidas.includes(act.id);
+            const hasCustomComm = act.comissoesCustomizadas?.some(c => c.alvoId === collab.id && c.tipo === 'vendedor');
+
+            if ((hasPermit || hasCustomComm) && !currentMembros.includes(collab.id)) {
+              currentMembros.push(collab.id);
+              changed = true;
+            }
+          });
+
+          if (changed) {
+            const updated = { ...act, membrosElegiveis: currentMembros };
+            setDoc(doc(db, "activities", act.id), updated).catch(() => {});
+            return updated;
+          }
+          return act;
+        });
+
         setActivities(finalActivities);
         StoreManager.saveActivities(finalActivities);
 
@@ -530,6 +555,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     StoreManager.saveActivities(activities);
   }, [activities]);
+
+  // Reactive synchronization: ensure activities' membrosElegiveis include all assigned collaborators
+  useEffect(() => {
+    if (activities.length === 0 || collaborators.length === 0) return;
+
+    let anyChanged = false;
+    const syncedActivities = activities.map(act => {
+      let currentMembros = act.membrosElegiveis ? [...act.membrosElegiveis] : [];
+      let modified = false;
+
+      collaborators.forEach(collab => {
+        if (collab.cargo === 'Admin') return;
+        const hasPermit = Array.isArray(collab.atividadesPermitidas) && collab.atividadesPermitidas.includes(act.id);
+        const hasCustomComm = act.comissoesCustomizadas?.some(c => c.alvoId === collab.id && c.tipo === 'vendedor');
+
+        if ((hasPermit || hasCustomComm) && !currentMembros.includes(collab.id)) {
+          currentMembros.push(collab.id);
+          modified = true;
+        }
+      });
+
+      if (modified) {
+        anyChanged = true;
+        const updated = { ...act, membrosElegiveis: currentMembros };
+        setDoc(doc(db, "activities", act.id), updated).catch(() => {});
+        return updated;
+      }
+      return act;
+    });
+
+    if (anyChanged) {
+      setActivities(syncedActivities);
+      StoreManager.saveActivities(syncedActivities);
+    }
+  }, [collaborators]);
 
   useEffect(() => {
     StoreManager.savePackages(packages);

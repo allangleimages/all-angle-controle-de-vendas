@@ -146,3 +146,60 @@ export function isPaymentInPeriod(sale: Sale, periodYearMonth: string): boolean 
   if (sale.status !== 'Pago' || !sale.dataPagamento) return false;
   return sale.dataPagamento.startsWith(periodYearMonth);
 }
+
+/**
+ * Determines whether a collaborator is credentialed/eligible to execute or launch a given activity.
+ * Supports:
+ * - Admin bypass (Admin can perform/see all activities)
+ * - Collaborator's explicit `atividadesPermitidas` list configured in Gestão de Equipe
+ * - Activity's custom commission rules (`comissoesCustomizadas`) targeting the collaborator as 'vendedor'
+ * - Activity's `membrosElegiveis` list configured in Matriz de Elegibilidade / Configuração de Atividades
+ */
+export function isCollaboratorEligibleForActivity(
+  collaborator: Collaborator | undefined,
+  activity: Activity | undefined
+): boolean {
+  if (!activity) return false;
+  if (!collaborator) return true;
+
+  // Admins always have access to all activities
+  if (collaborator.cargo === 'Admin' || collaborator.email?.toLowerCase() === 'info@allangle.com.br') {
+    return true;
+  }
+
+  // 1. Direct check: Is this activity explicitly listed in collaborator's atividadesPermitidas?
+  if (Array.isArray(collaborator.atividadesPermitidas) && collaborator.atividadesPermitidas.length > 0) {
+    if (collaborator.atividadesPermitidas.includes(activity.id)) {
+      return true;
+    }
+  }
+
+  // 2. Custom commission check: Has the activity configured a specific commission for this collaborator?
+  if (activity.comissoesCustomizadas && activity.comissoesCustomizadas.length > 0) {
+    const hasCommission = activity.comissoesCustomizadas.some(
+      c => c.alvoId === collaborator.id && c.tipo === 'vendedor'
+    );
+    if (hasCommission) {
+      return true;
+    }
+  }
+
+  // 3. Activity eligibility check: Is collaborator in the activity's membrosElegiveis list?
+  if (Array.isArray(activity.membrosElegiveis) && activity.membrosElegiveis.length > 0) {
+    if (activity.membrosElegiveis.includes(collaborator.id)) {
+      return true;
+    }
+    // If the activity has a restricted list of members and this collaborator is not in it
+    // and has no explicit permission/custom commission, they are not eligible for this activity
+    return false;
+  }
+
+  // 4. If collaborator has specific allowed activities configured, but this activity is not among them
+  if (Array.isArray(collaborator.atividadesPermitidas) && collaborator.atividadesPermitidas.length > 0) {
+    return false;
+  }
+
+  // 5. Default fallback: Open if no explicit restrictions on either side
+  return true;
+}
+

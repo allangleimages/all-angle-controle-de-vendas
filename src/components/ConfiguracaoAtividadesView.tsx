@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from './AppContext';
 import { Activity, CustomCommission } from '../types';
+import { isCollaboratorEligibleForActivity } from '../utils/finance';
 import { 
   Plus, Trash2, Settings, MessageSquare, HelpCircle, 
   AlertTriangle, Users, Waves, X, Edit2, Shield, HeartHandshake, Check
@@ -9,7 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 
 export const ConfiguracaoAtividadesView: React.FC = () => {
-  const { currentUser, activities, collaborators, partners, addActivity, updateActivity } = useApp();
+  const { currentUser, activities, collaborators, partners, addActivity, updateActivity, updateCollaborator } = useApp();
   const isAdmin = currentUser.cargo === 'Admin';
 
   const [isOpen, setIsOpen] = useState(false);
@@ -62,7 +63,12 @@ export const ConfiguracaoAtividadesView: React.FC = () => {
     setDescricao(act.descricao || '');
     setCorTag(act.corTag || '#6366f1');
     setParceiroId(act.parceiroId || '');
-    setMembrosElegiveis(act.membrosElegiveis || []);
+    const existing = act.membrosElegiveis || [];
+    const fromCollabs = collaborators
+      .filter(c => c.cargo !== 'Admin' && isCollaboratorEligibleForActivity(c, act))
+      .map(c => c.id);
+    const combined = Array.from(new Set([...existing, ...fromCollabs]));
+    setMembrosElegiveis(combined);
     setIsOpen(true);
   };
 
@@ -83,6 +89,18 @@ export const ConfiguracaoAtividadesView: React.FC = () => {
 
     if (editingActivity) {
       updateActivity(editingActivity.id, payload);
+
+      // Keep collaborator.atividadesPermitidas in sync
+      collaborators.forEach(c => {
+        if (c.cargo === 'Admin') return;
+        const isEligible = membrosElegiveis.includes(c.id);
+        const currentPermits = c.atividadesPermitidas || [];
+        if (isEligible && !currentPermits.includes(editingActivity.id)) {
+          updateCollaborator(c.id, { atividadesPermitidas: [...currentPermits, editingActivity.id] });
+        } else if (!isEligible && currentPermits.includes(editingActivity.id)) {
+          updateCollaborator(c.id, { atividadesPermitidas: currentPermits.filter(id => id !== editingActivity.id) });
+        }
+      });
     } else {
       addActivity({
         ...payload,
@@ -197,7 +215,9 @@ export const ConfiguracaoAtividadesView: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {activities.map(act => {
               const pairedPartnerObj = partners.find(p => p.id === act.parceiroId);
-              const totalEligible = act.membrosElegiveis?.length ?? collaborators.filter(c => c.email.toLowerCase() !== 'info@allangle.com.br').length;
+              const totalEligible = collaborators.filter(c => 
+                c.cargo !== 'Admin' && isCollaboratorEligibleForActivity(c, act)
+              ).length;
 
               return (
                 <div 

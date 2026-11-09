@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from './AppContext';
 import { StoreManager } from '../store';
-import { calculateCollaboratorCommission, calculatePartnerCommission, calculateSaleTaxes } from '../utils/finance';
+import { calculateCollaboratorCommission, calculatePartnerCommission, calculateSaleTaxes, isCollaboratorEligibleForActivity } from '../utils/finance';
 import { Sale, Collaborator, Partner, Activity, Package } from '../types';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1172,18 +1172,30 @@ export const HomeView: React.FC = () => {
   // Master ADM access block (Admins cannot perform launches, only equipe/staff can)
   const canPerformLaunches = !isAdmin;
 
-  // Activities eligible for the current logged-in user
+  // Activities eligible for the current logged-in user or selected salesperson
   const eligibleActivities = useMemo(() => {
-    return activities.filter(act => {
-      // For staff, we check eligibility list
-      if (!isAdmin) {
-        if (act.membrosElegiveis && act.membrosElegiveis.length > 0) {
-          return act.membrosElegiveis.includes(currentUser.id);
-        }
+    // If logged in as staff, evaluate eligibility for currentUser
+    // If logged in as Admin, if formData.vendedorId is picked, evaluate for that salesperson;
+    // if no vendedor selected yet, show all activities
+    const targetCollab = !isAdmin 
+      ? currentUser 
+      : (formData.vendedorId ? collaborators.find(c => c.id === formData.vendedorId) : null);
+
+    let list = activities;
+    if (targetCollab && (!isAdmin || formData.vendedorId)) {
+      list = activities.filter(act => isCollaboratorEligibleForActivity(targetCollab, act));
+    }
+
+    // Always include currently selected activity if it exists so form doesn't show blank
+    if (formData.atividadeId && !list.some(a => a.id === formData.atividadeId)) {
+      const currentAct = activities.find(a => a.id === formData.atividadeId);
+      if (currentAct) {
+        list = [currentAct, ...list];
       }
-      return true;
-    });
-  }, [activities, currentUser, isAdmin]);
+    }
+
+    return list;
+  }, [activities, currentUser, isAdmin, formData.vendedorId, formData.atividadeId, collaborators]);
 
   const handleInLaunchPartnerCreate = () => {
     if (!inLaunchPartnerName.trim()) {

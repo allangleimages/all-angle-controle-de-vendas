@@ -239,12 +239,15 @@ export const GestaoEquipeView: React.FC = () => {
 
       const collabId = savedCollab.id;
 
-      // Update custom commissions on Activities level
+      // Update custom commissions and activity eligibility on Activities level
       activities.forEach(act => {
         // 1. Remove old custom commissions for this collaborator
         const otherComms = (act.comissoesCustomizadas || []).filter(
           c => !(c.alvoId === collabId && c.tipo === 'vendedor')
         );
+
+        const currentMembros = act.membrosElegiveis ? [...act.membrosElegiveis] : [];
+        let updatedMembros = currentMembros.filter(mid => mid !== collabId);
 
         if (!isAdminRole) {
           // 2. Add row if configured for this activity ID
@@ -255,11 +258,16 @@ export const GestaoEquipeView: React.FC = () => {
               tipo: 'vendedor',
               taxa: Number(matchingRow.taxa)
             });
+            // Ensure this collaborator is in membrosElegiveis
+            updatedMembros.push(collabId);
           }
         }
 
         // 3. Persist activity payload
-        updateActivity(act.id, { comissoesCustomizadas: otherComms });
+        updateActivity(act.id, { 
+          comissoesCustomizadas: otherComms,
+          membrosElegiveis: updatedMembros
+        });
       });
 
       setIsOpen(false);
